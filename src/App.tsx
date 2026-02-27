@@ -1,51 +1,62 @@
 import { useEffect, useState } from "react";
-import type { Schema } from "../amplify/data/resource";
-import { useAuthenticator } from '@aws-amplify/ui-react';
-import { generateClient } from "aws-amplify/data";
+import { Authenticator } from "@aws-amplify/ui-react";
+import "@aws-amplify/ui-react/styles.css";
+import LandingPage from "./LandingPage";
+import MarketInfo from "./MarketInfo";
+import TodoPage from "./TodoPage";
 
-const client = generateClient<Schema>();
-
-function App() {
-  const { user, signOut } = useAuthenticator();
-
-  const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
-
-  useEffect(() => {
-    client.models.Todo.observeQuery().subscribe({
-      next: (data) => setTodos([...data.items]),
-    });
-  }, []);
-
-  function createTodo() {
-    client.models.Todo.create({ content: window.prompt("Todo content") });
+function normalizePath(pathname: string) {
+  if (!pathname || pathname === "/") {
+    return "/";
   }
 
+  return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+}
 
-  function deleteTodo(id: string) {
-    client.models.Todo.delete({ id })
-  }
-
+function NotFoundPage() {
   return (
     <main>
-      <h1>{user?.signInDetails?.loginId}'s todos</h1>
-      <button onClick={createTodo}>+ new</button>
-      <ul>
-        {todos.map((todo) => (
-          <li 
-          onClick={() => deleteTodo(todo.id)}
-	  key={todo.id}>{todo.content}</li>
-        ))}
-      </ul>
-      <div>
-        🥳 App successfully hosted. Try creating a new todo.
-        <br />
-        <a href="https://docs.amplify.aws/react/start/quickstart/#make-frontend-updates">
-          Review next step of this tutorial.
-        </a>
-      </div>
-      <button onClick={signOut}>Sign out</button>
+      <h1>Page not found</h1>
+      <a href="/">Go to landing page</a>
     </main>
   );
+}
+
+function App() {
+  const [pathname, setPathname] = useState(() =>
+    normalizePath(window.location.pathname),
+  );
+
+  useEffect(() => {
+    const onNavigation = () => {
+      setPathname(normalizePath(window.location.pathname));
+    };
+
+    window.addEventListener("popstate", onNavigation);
+    return () => window.removeEventListener("popstate", onNavigation);
+  }, []);
+
+  if (pathname === "/") {
+    return <LandingPage />;
+  }
+
+  if (pathname === "/app") {
+    return (
+      <Authenticator>
+        <TodoPage />
+      </Authenticator>
+    );
+  }
+
+  if (pathname === "/market-info") {
+    return (
+      <Authenticator>
+        <MarketInfo />
+      </Authenticator>
+    );
+  }
+
+  return <NotFoundPage />;
 }
 
 export default App;

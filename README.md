@@ -16,6 +16,34 @@ This template equips you with a foundational React application integrated with A
 
 For detailed instructions on deploying your application, refer to the [deployment section](https://docs.amplify.aws/react/start/quickstart/#deploy-a-fullstack-app-to-aws) of our documentation.
 
+## Schwab Market Info Setup
+
+This project includes a `MarketInfo` page (`/market-info`) backed by an Amplify function and HTTP API routes:
+
+- `GET /schwab/authorize`: starts Schwab OAuth
+- `GET /schwab/callback`: OAuth callback handler
+- `GET /schwab/market-info?symbol=...`: retrieves quote data from Schwab Level One Equities endpoint
+
+Set your Schwab credentials in AWS Systems Manager Parameter Store:
+
+```powershell
+aws ssm put-parameter --name "/amplify/schwab/credentials/app-key" --type "SecureString" --value "YOUR_SCHWAB_APP_KEY" --overwrite
+aws ssm put-parameter --name "/amplify/schwab/credentials/app-secret" --type "SecureString" --value "YOUR_SCHWAB_APP_SECRET" --overwrite
+```
+
+```git bash
+MSYS_NO_PATHCONV=1 aws ssm put-parameter --name "/amplify/schwab/credentials/app-key" --type "SecureString" --value "YOUR_SCHWAB_APP_KEY" --overwrite --region us-west-2
+MSYS_NO_PATHCONV=1 aws ssm put-parameter --name "/amplify/schwab/credentials/app-secret" --type "SecureString" --value "YOUR_SCHWAB_APP_SECRET" --overwrite
+```
+
+After deploying/sandbox synth, use the generated callback URL in your Schwab developer app:
+
+- `amplify_outputs.json` -> `custom.schwab.callback_url`
+
+If needed for local-only testing, you can also define:
+
+- `VITE_SCHWAB_API_URL` (for example in `.env.local`) to point the frontend to your API base URL.
+
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.

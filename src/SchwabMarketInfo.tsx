@@ -1,7 +1,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import outputs from "../amplify_outputs.json";
 
-type MarketInfoResponse = {
+type SchwabMarketInfoResponse = {
   symbol: string;
   data: unknown;
   fetchedAt: string;
@@ -36,7 +36,7 @@ function pickNumber(source: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
-function buildQuoteCardData(result: MarketInfoResponse): QuoteCardData {
+function buildQuoteCardData(result: SchwabMarketInfoResponse): QuoteCardData {
   const root = asRecord(result.data) ?? {};
   const symbolNode = asRecord(root[result.symbol]);
   const quoteNode = symbolNode ? asRecord(symbolNode.quote) : null;
@@ -111,11 +111,11 @@ function formatTimestamp(value: string) {
   return date.toLocaleString();
 }
 
-function MarketInfo() {
+function SchwabMarketInfo() {
   const [symbol, setSymbol] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<MarketInfoResponse | null>(null);
+  const [result, setResult] = useState<SchwabMarketInfoResponse | null>(null);
 
   const apiBaseUrl = useMemo(() => {
     const configUrl =
@@ -176,7 +176,7 @@ function MarketInfo() {
   return (
     <main>
       <a href="/">Back to landing page</a>
-      <h1>Market Info</h1>
+      <h1>Schwab Market Info</h1>
       <p>Connect Schwab and request Level One Equities market data by ticker symbol.</p>
       {authorizeUrl ? (
         <p>
@@ -240,4 +240,4 @@ function MarketInfo() {
   );
 }
 
-export default MarketInfo;
+export default SchwabMarketInfo;

@@ -18,7 +18,7 @@ For detailed instructions on deploying your application, refer to the [deploymen
 
 ## Schwab Market Info Setup
 
-This project includes a `MarketInfo` page (`/market-info`) backed by an Amplify function and HTTP API routes:
+This project includes a `SchwabMarketInfo` page (`/schwab-market-info`) backed by an Amplify function and HTTP API routes:
 
 - `GET /schwab/authorize`: starts Schwab OAuth
 - `GET /schwab/callback`: OAuth callback handler
@@ -43,6 +43,44 @@ After deploying/sandbox synth, use the generated callback URL in your Schwab dev
 If needed for local-only testing, you can also define:
 
 - `VITE_SCHWAB_API_URL` (for example in `.env.local`) to point the frontend to your API base URL.
+
+## Tasty Chart Setup
+
+This project includes a `TastyChart` page (`/tasty-chart`) backed by an Amplify function and HTTP API routes:
+
+- `GET /tasty/authorize`: starts TastyTrade OAuth
+- `GET /tasty/callback`: OAuth callback handler
+- `GET /tasty/market-info?symbol=...`: retrieves quote data from TastyTrade
+- `GET /tasty/status`: returns whether OAuth is currently connected
+
+This version uses the TastyTrade authorization code flow. Sign-in is launched in a dedicated popup page (`/tasty-auth-popup`), and the backend automatically refreshes access tokens when they expire.
+
+Environment selection:
+
+- Default is `prod`
+- To use sandbox instead, change `TASTY_ENV` in [amplify/functions/tasty-market-info/resource.ts](c:\Users\thoma\VSCode\amplify-vite-react-template\amplify\functions\tasty-market-info\resource.ts) from `"prod"` to `"sandbox"`
+
+Set your TastyTrade OAuth client credentials and session secret in AWS Systems Manager Parameter Store:
+
+```powershell
+MSYS_NO_PATHCONV=1 aws ssm put-parameter --name "/amplify/tasty/credentials/client-id" --type "SecureString" --value "YOUR_TASTY_CLIENT_ID" --overwrite
+MSYS_NO_PATHCONV=1 aws ssm put-parameter --name "/amplify/tasty/credentials/client-secret" --type "SecureString" --value "YOUR_TASTY_CLIENT_SECRET" --overwrite
+MSYS_NO_PATHCONV=1 aws ssm put-parameter --name "/amplify/tasty/credentials/session-secret" --type "SecureString" --value "YOUR_RANDOM_SESSION_SECRET" --overwrite
+```
+
+After deploy/sandbox synth, register this exact callback URL in your TastyTrade OAuth app:
+
+- `amplify_outputs.json` -> `custom.tasty.callback_url`
+
+### Tasty OAuth tokens and credentials
+
+- `client_id`: your TastyTrade OAuth app identifier (configured in SSM as `/amplify/tasty/credentials/client-id`)
+- `client_secret`: your TastyTrade OAuth app secret (configured in SSM as `/amplify/tasty/credentials/client-secret`)
+- `redirect_uri`: must exactly match `custom.tasty.callback_url`
+- `session_secret`: any long random string used to sign the OAuth state cookie (configured in SSM as `/amplify/tasty/credentials/session-secret`)
+- `authorization_code`: returned by TastyTrade after login
+- `access_token`: short-lived token used for API calls (cached in `/amplify/tasty/oauth/tokens`)
+- `refresh_token`: returned during token exchange and reused automatically (cached in `/amplify/tasty/oauth/tokens`)
 
 ## Security
 

@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { Authenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 import LandingPage from "./LandingPage";
-import MarketInfo from "./MarketInfo";
+import SchwabMarketInfo from "./SchwabMarketInfo";
+import TastyAuthPage from "./TastyAuthPage";
+import TastyAuthPopupPage from "./TastyAuthPopupPage";
+import TastyChart from "./TastyChart";
 import TodoPage from "./TodoPage";
 
 function normalizePath(pathname: string) {
@@ -48,10 +51,34 @@ function App() {
     );
   }
 
-  if (pathname === "/market-info") {
+  if (pathname === "/schwab-market-info") {
     return (
       <Authenticator>
-        <MarketInfo />
+        <SchwabMarketInfo />
+      </Authenticator>
+    );
+  }
+
+  if (pathname === "/tasty-chart" || pathname === "/tasty-market-info") {
+    return (
+      <Authenticator>
+        <TastyChart />
+      </Authenticator>
+    );
+  }
+
+  if (pathname === "/tasty-auth") {
+    return (
+      <Authenticator>
+        <TastyAuthPage />
+      </Authenticator>
+    );
+  }
+
+  if (pathname === "/tasty-auth-popup") {
+    return (
+      <Authenticator>
+        <TastyAuthPopupPage />
       </Authenticator>
     );
   }

@@ -148,3 +148,20 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 ## License
 
 This library is licensed under the MIT-0 License. See the LICENSE file.
+## Finnhub setup
+
+Store your Finnhub API key in SSM Parameter Store:
+
+```bash
+MSYS_NO_PATHCONV=1 aws ssm put-parameter --name "/amplify/finnhub/credentials/api-key" --type "SecureString" --value "YOUR_FINNHUB_API_KEY" --overwrite --region us-west-2
+```
+
+The Finnhub page uses the official quote endpoint and displays:
+
+- current price
+- change
+- percent change
+- high price of the day
+- low price of the day
+- open price of the day
+- previous close price

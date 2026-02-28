@@ -1,12 +1,60 @@
+.auth-menu {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+}
+
+.auth-menu-trigger {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: #1c1440;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.auth-menu-panel {
+  position: absolute;
+  right: 0;
+  margin-top: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 12px;
+  background: white;
+  padding: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.auth-menu-panel-user {
+  width: 220px;
+}
+
+.auth-menu-panel-guest {
+  width: 360px;
+}
+
+.auth-menu-identity {
+  margin-top: 0;
+}
+
+.site-frame-content {
+  padding-top: 84px;
+}
+
 body {
   margin: 0;
   background: linear-gradient(180deg, rgb(117, 81, 194), rgb(255, 255, 255));
+  background-repeat: no-repeat;
+  background-size: 200% 200vh;
   display: flex;
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  height: 100vh;
-  width: 100vw;
+  min-height: 100vh;
+  width: 100%;
+  padding-bottom: 80px;
+  box-sizing: border-box;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
 }
 
 main {
@@ -48,12 +96,35 @@ main {
   margin-bottom: 12px;
 }
 
-.landing-image {
+.landing-image-button {
+  position: relative;
+  border: 0;
+  background: transparent;
+  padding: 0;
   width: 100%;
   display: block;
+  aspect-ratio: 21 / 9;
+  overflow: hidden;
   border-radius: 16px;
-  object-fit: cover;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.landing-image-button:hover {
+  border-color: transparent;
+}
+
+.landing-image-button:focus,
+.landing-image-button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+.landing-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .landing-links {

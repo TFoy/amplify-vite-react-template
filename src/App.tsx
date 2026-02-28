@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
+import FinnhubQuote from "./FinnhubQuote";
 import LandingPage from "./LandingPage";
 import SchwabMarketInfo from "./SchwabMarketInfo";
 import TastyAuthPage from "./TastyAuthPage";
@@ -32,46 +33,19 @@ function UserMenu() {
   const identity = user?.signInDetails?.loginId ?? user?.username ?? "Guest";
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: "12px",
-        right: "12px",
-        zIndex: 1000,
-      }}
-    >
+    <div className="auth-menu">
       <button
+        className="auth-menu-trigger"
         onClick={() => setIsOpen((current) => !current)}
-        style={{
-          border: "none",
-          borderRadius: 0,
-          background: "transparent",
-          padding: 0,
-          color: "#1c1440",
-          fontWeight: 700,
-          boxShadow: "none",
-        }}
         type="button"
       >
         {user ? identity : "sign on"}
       </button>
       {isOpen ? (
-        <div
-          style={{
-            marginTop: "8px",
-            width: user ? "220px" : "360px",
-            border: "1px solid rgba(0, 0, 0, 0.18)",
-            borderRadius: "12px",
-            background: "white",
-            padding: "12px",
-            boxShadow: "0 12px 32px rgba(0, 0, 0, 0.18)",
-            position: "absolute",
-            right: 0,
-          }}
-        >
+        <div className={`auth-menu-panel ${user ? "auth-menu-panel-user" : "auth-menu-panel-guest"}`}>
           {user ? (
             <>
-              <p style={{ marginTop: 0 }}>{identity}</p>
+              <p className="auth-menu-identity">{identity}</p>
               <button onClick={signOut} type="button">
                 Sign out
               </button>
@@ -89,7 +63,7 @@ function SiteFrame({ children }: { children: React.ReactNode }) {
   return (
     <>
       <UserMenu />
-      <div style={{ paddingTop: "56px" }}>{children}</div>
+      <div className="site-frame-content">{children}</div>
     </>
   );
 }
@@ -128,6 +102,14 @@ function App() {
     return (
       <SiteFrame>
         <SchwabMarketInfo />
+      </SiteFrame>
+    );
+  }
+
+  if (pathname === "/finnhub-quote") {
+    return (
+      <SiteFrame>
+        <FinnhubQuote />
       </SiteFrame>
     );
   }

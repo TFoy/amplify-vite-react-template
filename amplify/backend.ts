@@ -5,6 +5,7 @@ import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { auth } from "./auth/resource";
 import { data } from "./data/resource";
+import { finnhubQuote } from "./functions/finnhub-quote/resource";
 import { schwabMarketInfo } from "./functions/schwab-market-info/resource";
 import { tastyMarketInfo } from "./functions/tasty-market-info/resource";
 import { tastyRestMarketInfo } from "./functions/tasty-rest-market-info/resource";
@@ -12,6 +13,7 @@ import { tastyRestMarketInfo } from "./functions/tasty-rest-market-info/resource
 const backend = defineBackend({
   auth,
   data,
+  finnhubQuote,
   schwabMarketInfo,
   tastyMarketInfo,
   tastyRestMarketInfo,
@@ -38,6 +40,10 @@ const tastyIntegration = new HttpLambdaIntegration(
 const tastyRestIntegration = new HttpLambdaIntegration(
   "TastyRestMarketInfoIntegration",
   backend.tastyRestMarketInfo.resources.lambda,
+);
+const finnhubIntegration = new HttpLambdaIntegration(
+  "FinnhubQuoteIntegration",
+  backend.finnhubQuote.resources.lambda,
 );
 
 schwabHttpApi.addRoutes({
@@ -118,6 +124,18 @@ schwabHttpApi.addRoutes({
   integration: tastyRestIntegration,
 });
 
+schwabHttpApi.addRoutes({
+  path: "/finnhub/status",
+  methods: [HttpMethod.GET],
+  integration: finnhubIntegration,
+});
+
+schwabHttpApi.addRoutes({
+  path: "/finnhub/quote",
+  methods: [HttpMethod.GET],
+  integration: finnhubIntegration,
+});
+
 const apiBaseUrl = schwabHttpApi.url ?? "";
 const callbackUrl = `${apiBaseUrl}schwab/callback`;
 const tastyCallbackUrl = `${apiBaseUrl}tasty/callback`;
@@ -158,6 +176,18 @@ backend.tastyRestMarketInfo.resources.lambda.addToRolePolicy(
     ],
   }),
 );
+backend.finnhubQuote.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: ["ssm:GetParameter"],
+    resources: [
+      schwabApiStack.formatArn({
+        service: "ssm",
+        resource: "parameter",
+        resourceName: "amplify/finnhub/*",
+      }),
+    ],
+  }),
+);
 
 const userPoolId = backend.auth.resources.userPool.userPoolId;
 const userPoolClientId = backend.auth.resources.userPoolClient.userPoolClientId;
@@ -168,6 +198,8 @@ backend.tastyMarketInfo.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
 backend.tastyMarketInfo.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
 backend.tastyRestMarketInfo.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
 backend.tastyRestMarketInfo.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
+backend.finnhubQuote.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
+backend.finnhubQuote.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
 
 backend.addOutput({
   custom: {
@@ -192,6 +224,11 @@ backend.addOutput({
       api_url: apiBaseUrl,
       status_url: `${apiBaseUrl}tasty-rest/status`,
       market_info_url: `${apiBaseUrl}tasty-rest/market-info`,
+    },
+    finnhub: {
+      api_url: apiBaseUrl,
+      status_url: `${apiBaseUrl}finnhub/status`,
+      quote_url: `${apiBaseUrl}finnhub/quote`,
     },
   },
 });

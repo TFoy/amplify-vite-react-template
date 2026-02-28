@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import outputs from "../amplify_outputs.json";
+import { getAuthHeaders } from "./auth";
 
 function TastyAuthPage() {
   const [status, setStatus] = useState("Preparing TastyTrade sign-in...");
@@ -37,9 +38,24 @@ function TastyAuthPage() {
 
     const returnTo = `${window.location.origin}/tasty-auth`;
     setStatus("Redirecting to TastyTrade sign-in...");
-    window.location.assign(
-      `${apiBaseUrl}/tasty/authorize?return_to=${encodeURIComponent(returnTo)}`,
-    );
+    void (async () => {
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/tasty/authorize-url?return_to=${encodeURIComponent(returnTo)}`,
+          {
+            headers: await getAuthHeaders(),
+          },
+        );
+        const payload = (await response.json()) as { authorizeUrl?: string; error?: string };
+        if (!response.ok || !payload.authorizeUrl) {
+          throw new Error(payload.error ?? "Unable to start TastyTrade sign-in.");
+        }
+
+        window.location.assign(payload.authorizeUrl);
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Unable to start TastyTrade sign-in.");
+      }
+    })();
   }, [apiBaseUrl]);
 
   return (

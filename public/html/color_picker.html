@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Color Selector</title>
+  <style>
+    :root {
+      --tile-size: 88px;
+      --gap: 14px;
+      --radius: 14px;
+      --shadow: 0 6px 18px rgba(0,0,0,.12);
+      --border: rgba(0,0,0,.12);
+      --text: #111;
+      --muted: rgba(0,0,0,.6);
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: var(--text);
+      background: #f6f7fb;
+    }
+
+    .wrap {
+      max-width: 860px;
+      margin: 28px auto;
+      padding: 18px;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      font-size: 18px;
+      margin: 0;
+      letter-spacing: .2px;
+    }
+
+    .hint {
+      margin: 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(var(--tile-size), 1fr));
+      gap: var(--gap);
+    }
+
+    .tile {
+      position: relative;
+      height: var(--tile-size);
+      border-radius: var(--radius);
+      border: 1px solid rgba(0,0,0,.12);
+      box-shadow: 0 2px 8px rgba(0,0,0,.06);
+      cursor: pointer;
+      user-select: none;
+      transition: transform .08s ease, filter .12s ease, opacity .12s ease;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 10px;
+      font-weight: 600;
+      letter-spacing: .2px;
+      text-transform: capitalize;
+    }
+
+    .tile:active {
+      transform: scale(0.98);
+    }
+
+    .label {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.75);
+      color: #111;
+      border: 1px solid rgba(0,0,0,.08);
+      backdrop-filter: blur(6px);
+    }
+
+    .tile.light .label {
+      background: rgba(0,0,0,.12);
+      color: #111;
+      border-color: rgba(0,0,0,.12);
+    }
+
+    .tile.disabled {
+      filter: grayscale(1);
+      opacity: 0.35;
+    }
+
+    .tile.disabled::after {
+      content: "";
+      position: absolute;
+      inset: 10px;
+      border-radius: calc(var(--radius) - 6px);
+      background:
+        linear-gradient(45deg, transparent 46%, rgba(0,0,0,.35) 47%, rgba(0,0,0,.35) 53%, transparent 54%),
+        linear-gradient(-45deg, transparent 46%, rgba(0,0,0,.35) 47%, rgba(0,0,0,.35) 53%, transparent 54%);
+      pointer-events: none;
+      mix-blend-mode: multiply;
+    }
+
+    .editor {
+      display: grid;
+      grid-template-columns: minmax(140px, 1fr) 140px auto;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .editor.remove {
+      grid-template-columns: minmax(140px, 1fr) auto;
+      margin-top: 12px;
+      margin-bottom: 0;
+    }
+
+    .editor input {
+      border: 1px solid rgba(0,0,0,.14);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font: inherit;
+      background: #fff;
+    }
+
+    .editor input[type="color"] {
+      padding: 4px;
+      min-height: 44px;
+      width: 100%;
+      cursor: pointer;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 16px;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid rgba(0,0,0,.14);
+      background: #111;
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-weight: 650;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,.12);
+      transition: transform .08s ease, opacity .12s ease;
+    }
+
+    button:active { transform: scale(0.98); }
+    button:hover  { opacity: 0.92; }
+
+    .status {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .tile:focus-visible, button:focus-visible, input:focus-visible {
+      outline: 3px solid rgba(30, 136, 229, .45);
+      outline-offset: 2px;
+    }
+
+    @media (max-width: 640px) {
+      .editor,
+      .editor.remove {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Color Toggle</h1>
+        <p class="hint">Click a color to disable or re-enable it. Add colors with the picker below. Remove colors by typing the exact color name.</p>
+      </div>
+    </header>
+
+    <div class="panel">
+      <div id="grid" class="grid" aria-label="Color list"></div>
+
+      <div class="controls">
+        <button id="resetBtn" type="button">Reset</button>
+        <span id="status" class="status" aria-live="polite"></span>
+      </div>
+
+      <form id="addColorForm" class="editor">
+        <input id="colorNameInput" type="text" placeholder="Color name" aria-label="Color name" />
+        <input id="colorValueInput" type="color" value="#3366ff" aria-label="Color picker" />
+        <button type="submit">Add Color</button>
+      </form>
+
+      <form id="removeColorForm" class="editor remove">
+        <input id="removeColorInput" type="text" placeholder="Type color name to remove" aria-label="Color name to remove" />
+        <button type="submit">Remove Color</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const COLORS = [
+      { name: "black", value: "#000000" },
+      { name: "white", value: "#ffffff" },
+      { name: "red", value: "#ff0000" },
+      { name: "fuchsia", value: "#ff00ff" },
+      { name: "orange", value: "#ff7a00" },
+      { name: "yellow", value: "#ffe500" },
+      { name: "green", value: "#00a84f" },
+      { name: "blue", value: "#0066ff" },
+      { name: "purple", value: "#7a2cff" }
+    ];
+
+    const disabled = new Set();
+
+    const grid = document.getElementById("grid");
+    const statusEl = document.getElementById("status");
+    const resetBtn = document.getElementById("resetBtn");
+    const addColorForm = document.getElementById("addColorForm");
+    const removeColorForm = document.getElementById("removeColorForm");
+    const colorNameInput = document.getElementById("colorNameInput");
+    const colorValueInput = document.getElementById("colorValueInput");
+    const removeColorInput = document.getElementById("removeColorInput");
+
+    function normalizeColorName(name) {
+      return name.trim().toLowerCase();
+    }
+
+    function isValidHex(value) {
+      return /^#([0-9a-f]{6})$/i.test(value.trim());
+    }
+
+    function isLightColor(hex) {
+      const v = hex.replace("#", "");
+      const r = parseInt(v.slice(0, 2), 16);
+      const g = parseInt(v.slice(2, 4), 16);
+      const b = parseInt(v.slice(4, 6), 16);
+      const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      return luminance > 185;
+    }
+
+    function render() {
+      grid.innerHTML = "";
+
+      for (const c of COLORS) {
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.style.background = c.value;
+        tile.setAttribute("role", "button");
+        tile.setAttribute("tabindex", "0");
+        tile.setAttribute("aria-pressed", String(disabled.has(c.name)));
+
+        if (isLightColor(c.value)) tile.classList.add("light");
+        if (disabled.has(c.name)) tile.classList.add("disabled");
+
+        const label = document.createElement("span");
+        label.className = "label";
+        label.textContent = c.name;
+
+        tile.appendChild(label);
+
+        const toggle = () => {
+          if (disabled.has(c.name)) disabled.delete(c.name);
+          else disabled.add(c.name);
+          render();
+        };
+
+        tile.addEventListener("click", toggle);
+        tile.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggle();
+          }
+        });
+
+        grid.appendChild(tile);
+      }
+
+      const disabledCount = disabled.size;
+      statusEl.textContent = disabledCount
+        ? `${disabledCount} disabled: ${Array.from(disabled).join(", ")}`
+        : "None disabled.";
+    }
+
+    resetBtn.addEventListener("click", () => {
+      disabled.clear();
+      render();
+    });
+
+    addColorForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const name = normalizeColorName(colorNameInput.value);
+      const value = colorValueInput.value.trim();
+
+      if (!name) {
+        statusEl.textContent = "Enter a color name.";
+        colorNameInput.focus();
+        return;
+      }
+
+      if (!isValidHex(value)) {
+        statusEl.textContent = "Pick a valid 6-digit color.";
+        colorValueInput.focus();
+        return;
+      }
+
+      if (COLORS.some((color) => color.name === name)) {
+        statusEl.textContent = `${name} already exists.`;
+        colorNameInput.focus();
+        return;
+      }
+
+      COLORS.push({ name, value: value.toLowerCase() });
+      colorNameInput.value = "";
+      colorValueInput.value = "#3366ff";
+      render();
+      statusEl.textContent = `Added ${name}.`;
+      colorNameInput.focus();
+    });
+
+    removeColorForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const name = normalizeColorName(removeColorInput.value);
+      if (!name) {
+        statusEl.textContent = "Type the exact color name you want to remove.";
+        removeColorInput.focus();
+        return;
+      }
+
+      const index = COLORS.findIndex((color) => color.name === name);
+      if (index === -1) {
+        statusEl.textContent = `${name} was not found.`;
+        removeColorInput.focus();
+        return;
+      }
+
+      COLORS.splice(index, 1);
+      disabled.delete(name);
+      removeColorInput.value = "";
+      render();
+      statusEl.textContent = `Removed ${name}.`;
+      removeColorInput.focus();
+    });
+
+    render();
+  </script>
+</body>
+</html>

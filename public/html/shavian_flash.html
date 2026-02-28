@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Shavian Flash Cards (SRS + Review)</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+
+    body{
+      margin:0;
+      font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji";
+      display:grid;
+      place-items:center;
+      min-height:100vh;
+      padding:24px;
+      background:#0b0f17;
+      color:#e7ecff;
+    }
+
+    .app{
+      width:min(920px,100%);
+      display:grid;
+      gap:16px;
+      justify-items:center;
+    }
+
+    h1{
+      margin:0 0 4px 0;
+      font-size:20px;
+      font-weight:900;
+      text-align:center;
+      opacity:.95;
+    }
+
+    .sub{
+      margin:0;
+      font-size:14px;
+      opacity:.75;
+      text-align:center;
+      line-height:1.35;
+    }
+
+    .kbd{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+      font-size:11px;
+      padding:2px 6px;
+      border-radius:8px;
+      border:1px solid rgba(255,255,255,.18);
+      background:rgba(255,255,255,.06);
+      opacity:.95;
+      display:inline-block;
+      margin:0 2px;
+    }
+
+    /* Card */
+    .card-wrap{
+      width:min(520px,100%);
+      perspective:1200px;
+    }
+    .card{
+      position:relative;
+      z-index:2;
+      width:100%;
+      aspect-ratio:3/2; /* SAME front/back size */
+      border-radius:18px;
+      transform-style:preserve-3d;
+      transition: transform 420ms cubic-bezier(.2,.8,.2,1);
+      cursor:pointer;
+      user-select:none;
+      outline:none;
+    }
+    .card:focus-visible{ box-shadow:0 0 0 3px rgba(128,170,255,.6); }
+    .card.is-flipped{ transform: rotateY(180deg); }
+
+    /* Faces */
+    .face{
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      border-radius:18px;
+
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+
+      backface-visibility:hidden;
+      padding:0;
+
+      background: linear-gradient(145deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow:0 12px 40px rgba(0,0,0,.35);
+      overflow:hidden;
+
+      /* ensure inner overlays don't steal clicks */
+      pointer-events:none;
+    }
+    .back{ transform: rotateY(180deg); }
+
+    .inner{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      padding:18px;
+      text-align:center;
+      pointer-events:none;
+    }
+
+    /* Prefer Shavian-supporting fonts when installed */
+    .kana{
+      font-family: "Noto Sans Shavian", "Segoe UI Historic", "Noto Sans", system-ui, sans-serif;
+      font-size: clamp(72px, 10.5vw, 120px);
+      font-weight: 900;
+      letter-spacing: .02em;
+      line-height: 1;
+      pointer-events:none;
+    }
+
+    .reading{
+      font-size:16px;
+      font-weight:900;
+      opacity:.92;
+      pointer-events:none;
+    }
+
+    .hint{
+      position:absolute;
+      bottom:12px;
+      left:0; right:0;
+      text-align:center;
+      font-size:12px;
+      opacity:.55;
+      pointer-events:none;
+      padding:0 12px;
+    }
+
+    /* Controls / Stats */
+    .controls{
+      width:min(520px,100%);
+      display:grid;
+      gap:10px;
+      justify-items:center;
+    }
+
+    .btn-row{
+      display:none;
+      width:100%;
+      gap:10px;
+      grid-template-columns:1fr 1fr;
+    }
+    .btn-row.show{ display:grid; }
+
+    button{
+      appearance:none;
+      border:1px solid rgba(255,255,255,.16);
+      background:rgba(255,255,255,.08);
+      color:inherit;
+      padding:12px 14px;
+      border-radius:12px;
+      font-size:14px;
+      font-weight:950;
+      cursor:pointer;
+      transition: transform 80ms ease, background 160ms ease, border-color 160ms ease, opacity 160ms ease;
+    }
+    button:hover{ background:rgba(255,255,255,.12); }
+    button:active{ transform: translateY(1px); }
+    button:focus-visible{ outline:none; box-shadow:0 0 0 3px rgba(128,170,255,.55); }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+
+    .stats{
+      width:100%;
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap:10px;
+    }
+    .stat{
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.06);
+      border-radius:14px;
+      padding:10px 12px;
+      text-align:center;
+    }
+    .stat .label{ font-size:12px; opacity:.7; }
+    .stat .value{ margin-top:2px; font-size:18px; font-weight:950; }
+
+    /* 6 controls after stats */
+    .toolbar-bottom{
+      width:100%;
+      display:grid;
+      gap:10px;
+      margin-top:2px;
+    }
+    .mode-row, .meta-row, .aux-row{
+      width:100%;
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+
+    .pill{
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.05);
+      border-radius:999px;
+      padding:10px 12px;
+      text-align:center;
+      font-size:12px;
+      opacity:.92;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height: 44px;
+    }
+
+    .done{
+      width:100%;
+      display:none;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(255,255,255,.06);
+      border-radius:16px;
+      padding:14px 16px;
+      text-align:center;
+      line-height:1.35;
+    }
+    .done.show{ display:block; }
+
+    .footer{
+      width:100%;
+      display:grid;
+      gap:8px;
+      justify-items:center;
+      margin-top:2px;
+      opacity:.9;
+    }
+
+    .reset{
+      font-size:13px;
+      color:inherit;
+      text-decoration:underline;
+      cursor:pointer;
+      opacity:.75;
+    }
+    .reset:hover{ opacity:1; }
+
+    .small{
+      font-size:12px;
+      opacity:.7;
+      text-align:center;
+    }
+
+    .note{
+      width:min(520px,100%);
+      font-size:12px;
+      opacity:.65;
+      text-align:center;
+      line-height:1.35;
+    }
+  </style>
+</head>
+<body>
+  <div class="app" role="application" aria-label="Shavian flash cards">
+
+    <div>
+      <h1>Shavian Flash Cards</h1>
+      <p class="sub">
+        Click the card to flip and hear the example word (Text-to-Speech). Then mark <b>Right</b> or <b>Wrong</b>.<br/>
+        <span class="kbd">Space</span>/<span class="kbd">Enter</span> flips,
+        <span class="kbd">R</span> right,
+        <span class="kbd">W</span> wrong
+      </p>
+    </div>
+
+    <div class="card-wrap" id="cardWrap">
+      <div id="card" class="card" tabindex="0" aria-label="Flash card">
+        <div class="face front" aria-hidden="false">
+          <div class="kana" id="frontKana">𐑐</div>
+          <div class="hint">Click to flip • Space/Enter also works</div>
+        </div>
+        <div class="face back" aria-hidden="true">
+          <div class="inner">
+            <div class="kana" id="backKana">𐑐</div>
+            <div class="reading" id="reading">peep — p (as in “pep”)</div>
+          </div>
+          <div class="hint">Mark right/wrong to continue</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div id="btnRow" class="btn-row" aria-label="Answer buttons">
+        <button id="btnRight" type="button">Right</button>
+        <button id="btnWrong" type="button">Wrong</button>
+      </div>
+
+      <div class="stats" aria-label="Scoreboard">
+        <div class="stat">
+          <div class="label">Right</div>
+          <div class="value" id="statRight">0</div>
+        </div>
+        <div class="stat">
+          <div class="label">Wrong</div>
+          <div class="value" id="statWrong">0</div>
+        </div>
+        <div class="stat">
+          <div class="label">% Correct</div>
+          <div class="value" id="statPct">0%</div>
+        </div>
+      </div>
+
+      <div class="toolbar-bottom" aria-label="Mode and session controls">
+        <div class="mode-row">
+          <button id="btnModeSrs" type="button" aria-pressed="true">Spaced Repetition</button>
+          <button id="btnModeReview" type="button" aria-pressed="false">Review All</button>
+        </div>
+
+        <div class="meta-row">
+          <div id="pillA" class="pill">New remaining: 0</div>
+          <div id="pillB" class="pill">Due now: 0</div>
+        </div>
+
+        <div class="aux-row">
+          <button id="btnIntroduceNew" type="button">Introduce New Now</button>
+          <button id="btnSkip" type="button">Skip (no score)</button>
+        </div>
+      </div>
+
+      <div id="doneBox" class="done" role="status" aria-live="polite"></div>
+
+      <div class="footer">
+        <div id="resetLink" class="reset" role="button" tabindex="0" aria-label="Reset session">Reset session</div>
+        <div class="small" id="modeHelp">
+          Mode: Spaced repetition • “Introduce New Now” forces a never-seen card next
+        </div>
+      </div>
+
+      <div class="note">
+        If the symbols look like boxes, install a Shavian font (e.g., “Noto Sans Shavian”) or use a browser/OS that includes Shavian support.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ---------------------------
+    // Shavian alphabet (48 letters)
+    //
+    // Back-side "reading" is:
+    //   name — sound (example word)
+    //
+    // TTS will speak the example word (best-effort).
+    // ---------------------------
+    const SHAVIAN = [
+      { ch:"𐑐", name:"peep",    sound:"p",   example:"pep" },
+      { ch:"𐑑", name:"tot",     sound:"t",   example:"tot" },
+      { ch:"𐑒", name:"kick",    sound:"k",   example:"kick" },
+      { ch:"𐑓", name:"fife",    sound:"f",   example:"fife" },
+      { ch:"𐑔", name:"thith",   sound:"th",  example:"thin" },
+      { ch:"𐑕", name:"so",      sound:"s",   example:"so" },
+      { ch:"𐑖", name:"sure",    sound:"sh",  example:"ship" },
+      { ch:"𐑗", name:"church",  sound:"ch",  example:"church" },
+      { ch:"𐑘", name:"yew",     sound:"y",   example:"yes" },
+      { ch:"𐑙", name:"hung",    sound:"ng",  example:"hung" },
+
+      { ch:"𐑚", name:"bib",     sound:"b",   example:"bib" },
+      { ch:"𐑛", name:"dead",    sound:"d",   example:"dead" },
+      { ch:"𐑜", name:"gag",     sound:"g",   example:"gag" },
+      { ch:"𐑝", name:"vieve",   sound:"v",   example:"vive" },
+      { ch:"𐑞", name:"they",    sound:"th",  example:"they" },
+      { ch:"𐑟", name:"zoo",     sound:"z",   example:"zoo" },
+      { ch:"𐑠", name:"measure", sound:"zh",  example:"measure" },
+      { ch:"𐑡", name:"judge",   sound:"j",   example:"judge" },
+      { ch:"𐑢", name:"woe",     sound:"w",   example:"woe" },
+      { ch:"𐑣", name:"ha-ha",   sound:"h",   example:"ha" },
+
+      { ch:"𐑤", name:"lull",    sound:"l",   example:"lull" },
+      { ch:"𐑮", name:"roar",    sound:"r",   example:"roar" },
+      { ch:"𐑥", name:"mime",    sound:"m",   example:"mime" },
+      { ch:"𐑯", name:"nun",     sound:"n",   example:"nun" },
+
+      { ch:"𐑦", name:"if",      sound:"i",   example:"if" },
+      { ch:"𐑧", name:"egg",     sound:"e",   example:"egg" },
+      { ch:"𐑨", name:"ash",     sound:"a",   example:"ash" },
+      { ch:"𐑩", name:"ado",     sound:"uh",  example:"about" },
+      { ch:"𐑪", name:"on",      sound:"o",   example:"on" },
+      { ch:"𐑫", name:"wool",    sound:"oo",  example:"wool" },
+      { ch:"𐑬", name:"out",     sound:"ou",  example:"out" },
+      { ch:"𐑭", name:"ah",      sound:"ah",  example:"father" },
+
+      { ch:"𐑰", name:"eat",     sound:"ee",  example:"eat" },
+      { ch:"𐑱", name:"age",     sound:"ay",  example:"age" },
+      { ch:"𐑲", name:"ice",     sound:"eye", example:"ice" },
+      { ch:"𐑳", name:"up",      sound:"u",   example:"up" },
+      { ch:"𐑴", name:"oak",     sound:"oh",  example:"oak" },
+      { ch:"𐑵", name:"ooze",    sound:"oo",  example:"ooze" },
+      { ch:"𐑶", name:"oil",     sound:"oy",  example:"oil" },
+      { ch:"𐑷", name:"awe",     sound:"aw",  example:"awe" },
+
+      { ch:"𐑸", name:"are",     sound:"ar",  example:"are" },
+      { ch:"𐑹", name:"or",      sound:"or",  example:"or" },
+      { ch:"𐑺", name:"air",     sound:"air", example:"air" },
+      { ch:"𐑻", name:"err",     sound:"er",  example:"her" },
+      { ch:"𐑼", name:"array",   sound:"uh-r",example:"array" },
+      { ch:"𐑽", name:"ear",     sound:"eer", example:"ear" },
+      { ch:"𐑾", name:"ian",     sound:"ee-uh",example:"Ian" },
+      { ch:"𐑿", name:"you",     sound:"yoo", example:"you" }
+    ];
+
+    const ALL_CARDS = SHAVIAN.map((x, idx) => ({
+      id: idx,
+      kana: x.ch,
+      reading: `${x.name} — ${x.sound} (as in “${x.example}”)`,
+      speak: x.example
+    }));
+
+    // ---------------------------
+    // DOM
+    // ---------------------------
+    const cardWrapEl = document.getElementById("cardWrap");
+    const cardEl = document.getElementById("card");
+    const frontKanaEl = document.getElementById("frontKana");
+    const backKanaEl  = document.getElementById("backKana");
+    const readingEl   = document.getElementById("reading");
+
+    const btnRowEl    = document.getElementById("btnRow");
+    const btnRightEl  = document.getElementById("btnRight");
+    const btnWrongEl  = document.getElementById("btnWrong");
+
+    const statRightEl = document.getElementById("statRight");
+    const statWrongEl = document.getElementById("statWrong");
+    const statPctEl   = document.getElementById("statPct");
+
+    const pillAEl = document.getElementById("pillA");
+    const pillBEl = document.getElementById("pillB");
+
+    const btnModeSrsEl = document.getElementById("btnModeSrs");
+    const btnModeReviewEl = document.getElementById("btnModeReview");
+    const btnIntroduceNewEl = document.getElementById("btnIntroduceNew");
+    const btnSkipEl = document.getElementById("btnSkip");
+
+    const doneBoxEl = document.getElementById("doneBox");
+    const resetLinkEl = document.getElementById("resetLink");
+    const modeHelpEl = document.getElementById("modeHelp");
+
+    // ---------------------------
+    // TTS (English voice)
+    // ---------------------------
+    function getEnglishVoice(){
+      const voices = window.speechSynthesis?.getVoices?.() || [];
+      return voices.find(v => (v.lang || "").toLowerCase().startsWith("en")) || null;
+    }
+
+    let cachedEnVoice = null;
+
+    function speakText(text){
+      if (!("speechSynthesis" in window)) return;
+      if (!cachedEnVoice) cachedEnVoice = getEnglishVoice();
+
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "en-US";
+      u.rate = 0.95;
+      u.pitch = 1.0;
+      if (cachedEnVoice) u.voice = cachedEnVoice;
+
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    }
+
+    function primeVoices(){
+      if (!("speechSynthesis" in window)) return;
+      window.speechSynthesis.getVoices();
+    }
+
+    if ("speechSynthesis" in window){
+      window.speechSynthesis.onvoiceschanged = () => {
+        cachedEnVoice = getEnglishVoice();
+      };
+    }
+
+    // ---------------------------
+    // Shared state + helpers
+    // ---------------------------
+    const MODE = { SRS: "srs", REVIEW: "review" };
+    let mode = MODE.SRS;
+
+    let right = 0;
+    let wrong = 0;
+
+    let currentCard = null;
+    let isFlipped = false;
+    let finished = false;
+
+    function setCard(card){
+      currentCard = card;
+      frontKanaEl.textContent = card.kana;
+      backKanaEl.textContent = card.kana;
+      readingEl.textContent = card.reading;
+    }
+
+    function setFlipped(flip){
+      isFlipped = flip;
+      cardEl.classList.toggle("is-flipped", flip);
+      btnRowEl.classList.toggle("show", flip && !finished);
+
+      const faces = cardEl.querySelectorAll(".face");
+      faces[0].setAttribute("aria-hidden", flip ? "true" : "false");
+      faces[1].setAttribute("aria-hidden", flip ? "false" : "true");
+    }
+
+    function updateStats(){
+      const total = right + wrong;
+      const pct = total === 0 ? 0 : Math.round((right / total) * 100);
+      statRightEl.textContent = String(right);
+      statWrongEl.textContent = String(wrong);
+      statPctEl.textContent = `${pct}%`;
+    }
+
+    function showDone(html){
+      doneBoxEl.innerHTML = html;
+      doneBoxEl.classList.add("show");
+    }
+    function hideDone(){
+      doneBoxEl.classList.remove("show");
+      doneBoxEl.textContent = "";
+    }
+
+    function shuffle(arr){
+      for (let i = arr.length - 1; i > 0; i--){
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    // ---------------------------
+    // REVIEW MODE (no spaced repetition)
+    // ---------------------------
+    let reviewDeck = [];
+    let reviewPos = 0;
+
+    function resetReview(){
+      reviewDeck = shuffle([...Array(ALL_CARDS.length).keys()]);
+      reviewPos = 0;
+    }
+
+    function updateReviewMeta(){
+      const remaining = Math.max(0, reviewDeck.length - reviewPos);
+      const done = Math.min(reviewPos, reviewDeck.length);
+      pillAEl.textContent = `Remaining in review: ${remaining}`;
+      pillBEl.textContent = `Reviewed: ${done}/${reviewDeck.length}`;
+    }
+
+    function nextReviewCard(){
+      updateReviewMeta();
+
+      if (reviewPos >= reviewDeck.length){
+        finished = true;
+        setFlipped(false);
+
+        const total = right + wrong;
+        const pct = total === 0 ? 0 : Math.round((right / total) * 100);
+
+        showDone(
+          `✅ Review complete.<br/>` +
+          `Final score: <strong>${right}</strong> right, <strong>${wrong}</strong> wrong — <strong>${pct}%</strong> correct.<br/>` +
+          `Cards reviewed: <strong>${reviewDeck.length}</strong>.`
+        );
+        return;
+      }
+
+      const idx = reviewDeck[reviewPos++];
+      setCard(ALL_CARDS[idx]);
+      setFlipped(false);
+      updateReviewMeta();
+      cardEl.focus({ preventScroll:true });
+    }
+
+    // ---------------------------
+    // SRS MODE (session-based spaced repetition)
+    // ---------------------------
+    const SCHEDULE_STEPS = [1,2,4,8,16,32];
+    const MASTERED_STAGE = 4;
+
+    const INTRO_EVERY = 3;
+    const DUE_SMALL = 2;
+    const RANDOM_NEW_CHANCE = 0.15;
+
+    let tick = 0;
+    let answersSinceNew = 0;
+    let forceIntroduceNewNext = false;
+
+    let srsCards = [];
+
+    function resetSrs(){
+      tick = 0;
+      answersSinceNew = 0;
+      forceIntroduceNewNext = false;
+
+      srsCards = ALL_CARDS.map((c) => ({
+        ...c,
+        stage: 0,
+        dueTick: 0,
+        introduced: false,
+        lapses: 0,
+        introRank: 0
+      }));
+
+      const order = shuffle(srsCards.map(c => c.id));
+      for (let i = 0; i < order.length; i++){
+        srsCards[order[i]].introRank = i;
+      }
+    }
+
+    function countNewRemaining(){
+      return srsCards.filter(c => !c.introduced).length;
+    }
+    function countDue(){
+      return srsCards.filter(c => c.introduced && c.dueTick <= tick).length;
+    }
+
+    function updateSrsMeta(){
+      pillAEl.textContent = `New remaining: ${countNewRemaining()}`;
+      pillBEl.textContent = `Due now: ${countDue()}`;
+      btnIntroduceNewEl.disabled = countNewRemaining() === 0;
+    }
+
+    function isSrsComplete(){
+      return countNewRemaining() === 0 && countDue() === 0;
+    }
+
+    function getNextNewCard(){
+      const unseen = srsCards
+        .filter(c => !c.introduced)
+        .sort((a,b) => a.introRank - b.introRank);
+      return unseen.length ? unseen[0] : null;
+    }
+
+    function getDueCards(){
+      return srsCards.filter(c => c.introduced && c.dueTick <= tick);
+    }
+
+    function shouldIntroduceNew(dueCount){
+      if (countNewRemaining() === 0) return false;
+      if (dueCount === 0) return true;
+      if (dueCount <= DUE_SMALL) return true;
+      if (answersSinceNew >= INTRO_EVERY) return true;
+      return Math.random() < RANDOM_NEW_CHANCE;
+    }
+
+    function pickNextSrsCard(){
+      if (forceIntroduceNewNext){
+        forceIntroduceNewNext = false;
+        const n = getNextNewCard();
+        if (n) return n;
+      }
+
+      const due = getDueCards();
+      const dueCount = due.length;
+
+      if (shouldIntroduceNew(dueCount)){
+        const n = getNextNewCard();
+        if (n) return n;
+      }
+
+      if (dueCount > 0){
+        const weights = due.map(c => (MASTERED_STAGE + 2) - Math.min(c.stage, MASTERED_STAGE + 1));
+        const totalW = weights.reduce((a,b)=>a+b,0);
+        let r = Math.random() * totalW;
+        for (let i = 0; i < due.length; i++){
+          r -= weights[i];
+          if (r <= 0) return due[i];
+        }
+        return due[due.length - 1];
+      }
+
+      return getNextNewCard();
+    }
+
+    function scheduleAfterAnswer(card, wasRight){
+      if (wasRight){
+        card.stage = Math.min(card.stage + 1, SCHEDULE_STEPS.length);
+        const idx = Math.min(card.stage - 1, SCHEDULE_STEPS.length - 1);
+        const delay = SCHEDULE_STEPS[Math.max(0, idx)];
+        card.dueTick = tick + delay;
+      } else {
+        card.lapses += 1;
+        card.stage = 0;
+        card.dueTick = tick + 1;
+      }
+    }
+
+    function nextSrsCard(){
+      updateSrsMeta();
+
+      if (isSrsComplete()){
+        finished = true;
+        setFlipped(false);
+
+        const total = right + wrong;
+        const pct = total === 0 ? 0 : Math.round((right / total) * 100);
+        const learned = srsCards.filter(c => c.stage >= MASTERED_STAGE).length;
+
+        showDone(
+          `✅ SRS session complete.<br/>` +
+          `Score: <strong>${right}</strong> right, <strong>${wrong}</strong> wrong — <strong>${pct}%</strong> correct.<br/>` +
+          `Learned this session: <strong>${learned}/${srsCards.length}</strong> (stage ≥ ${MASTERED_STAGE}).`
+        );
+        return;
+      }
+
+      const next = pickNextSrsCard();
+      if (!next){
+        finished = true;
+        setFlipped(false);
+        showDone(`✅ SRS session complete.`);
+        return;
+      }
+
+      const wasNew = !next.introduced;
+      if (wasNew){
+        next.introduced = true;
+        next.dueTick = tick;
+        answersSinceNew = 0;
+      }
+
+      setCard(next);
+      setFlipped(false);
+      updateSrsMeta();
+      cardEl.focus({ preventScroll:true });
+    }
+
+    // ---------------------------
+    // Mode switching + flow
+    // ---------------------------
+    function setMode(newMode){
+      mode = newMode;
+
+      btnModeSrsEl.setAttribute("aria-pressed", mode === MODE.SRS ? "true" : "false");
+      btnModeReviewEl.setAttribute("aria-pressed", mode === MODE.REVIEW ? "true" : "false");
+
+      if (mode === MODE.SRS){
+        btnIntroduceNewEl.style.display = "";
+        modeHelpEl.textContent = "Mode: Spaced repetition • “Introduce New Now” forces a never-seen card next";
+      } else {
+        btnIntroduceNewEl.style.display = "none";
+        modeHelpEl.textContent = "Mode: Review all • Shows every card once in random order (no spaced repetition)";
+      }
+
+      resetSession();
+    }
+
+    function nextCard(){
+      if (finished) return;
+      if (mode === MODE.REVIEW) nextReviewCard();
+      else nextSrsCard();
+    }
+
+    function flipCard(){
+      if (finished) return;
+      const goingToBack = !isFlipped;
+      setFlipped(!isFlipped);
+
+      if (goingToBack && currentCard?.speak){
+        speakText(currentCard.speak);
+      }
+    }
+
+    function answer(isRight){
+      if (finished) return;
+      if (!isFlipped) return;
+
+      if (isRight) right++;
+      else wrong++;
+
+      if (mode === MODE.REVIEW){
+        updateStats();
+        nextCard();
+        return;
+      }
+
+      tick += 1;
+      answersSinceNew += 1;
+
+      scheduleAfterAnswer(currentCard, isRight);
+
+      updateStats();
+      nextCard();
+    }
+
+    function skipNoScore(){
+      if (finished) return;
+      nextCard();
+    }
+
+    function resetSession(){
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+
+      right = 0;
+      wrong = 0;
+      updateStats();
+      hideDone();
+
+      finished = false;
+
+      if (mode === MODE.REVIEW){
+        resetReview();
+        updateReviewMeta();
+        nextReviewCard();
+      } else {
+        resetSrs();
+        updateSrsMeta();
+        nextSrsCard();
+      }
+    }
+
+    // ---------------------------
+    // Events
+    // ---------------------------
+    cardEl.addEventListener("click", (e) => {
+      flipCard();
+    });
+    cardWrapEl.addEventListener("click", (e) => {
+      // fallback click target
+      flipCard();
+    });
+
+    cardEl.addEventListener("keydown", (e) => {
+      if (e.key === " " || e.key === "Enter"){
+        e.preventDefault();
+        flipCard();
+        return;
+      }
+      if (!finished && isFlipped){
+        const k = e.key.toLowerCase();
+        if (k === "r") answer(true);
+        if (k === "w") answer(false);
+      }
+    });
+
+    btnRightEl.addEventListener("click", () => answer(true));
+    btnWrongEl.addEventListener("click", () => answer(false));
+
+    btnSkipEl.addEventListener("click", skipNoScore);
+
+    btnIntroduceNewEl.addEventListener("click", () => {
+      if (mode !== MODE.SRS) return;
+      if (countNewRemaining() === 0) return;
+      forceIntroduceNewNext = true;
+      nextCard(); // immediate jump to a new card (no score, no tick)
+    });
+
+    btnModeSrsEl.addEventListener("click", () => {
+      if (mode !== MODE.SRS) setMode(MODE.SRS);
+    });
+    btnModeReviewEl.addEventListener("click", () => {
+      if (mode !== MODE.REVIEW) setMode(MODE.REVIEW);
+    });
+
+    resetLinkEl.addEventListener("click", resetSession);
+    resetLinkEl.addEventListener("keydown", (e) => {
+      if (e.key === " " || e.key === "Enter"){
+        e.preventDefault();
+        resetSession();
+      }
+    });
+
+    // ---------------------------
+    // Init
+    // ---------------------------
+    (function init(){
+      primeVoices();
+      setMode(MODE.SRS);
+      setTimeout(() => cardEl.focus({ preventScroll:true }), 0);
+    })();
+  </script>
+</body>
+</html>

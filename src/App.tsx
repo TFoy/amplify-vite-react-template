@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Authenticator } from "@aws-amplify/ui-react";
+import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 import LandingPage from "./LandingPage";
 import SchwabMarketInfo from "./SchwabMarketInfo";
@@ -26,6 +26,74 @@ function NotFoundPage() {
   );
 }
 
+function UserMenu() {
+  const { user, signOut } = useAuthenticator((context) => [context.user]);
+  const [isOpen, setIsOpen] = useState(false);
+  const identity = user?.signInDetails?.loginId ?? user?.username ?? "Guest";
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: "12px",
+        right: "12px",
+        zIndex: 1000,
+      }}
+    >
+      <button
+        onClick={() => setIsOpen((current) => !current)}
+        style={{
+          border: "none",
+          borderRadius: 0,
+          background: "transparent",
+          padding: 0,
+          color: "#1c1440",
+          fontWeight: 700,
+          boxShadow: "none",
+        }}
+        type="button"
+      >
+        {user ? identity : "sign on"}
+      </button>
+      {isOpen ? (
+        <div
+          style={{
+            marginTop: "8px",
+            width: user ? "220px" : "360px",
+            border: "1px solid rgba(0, 0, 0, 0.18)",
+            borderRadius: "12px",
+            background: "white",
+            padding: "12px",
+            boxShadow: "0 12px 32px rgba(0, 0, 0, 0.18)",
+            position: "absolute",
+            right: 0,
+          }}
+        >
+          {user ? (
+            <>
+              <p style={{ marginTop: 0 }}>{identity}</p>
+              <button onClick={signOut} type="button">
+                Sign out
+              </button>
+            </>
+          ) : (
+            <Authenticator initialState="signIn" />
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SiteFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <UserMenu />
+      <div style={{ paddingTop: "56px" }}>{children}</div>
+    </>
+  );
+}
+
 function App() {
   const [pathname, setPathname] = useState(() =>
     normalizePath(window.location.pathname),
@@ -41,58 +109,66 @@ function App() {
   }, []);
 
   if (pathname === "/") {
-    return <LandingPage />;
+    return (
+      <SiteFrame>
+        <LandingPage />
+      </SiteFrame>
+    );
   }
 
   if (pathname === "/app") {
     return (
-      <Authenticator>
+      <SiteFrame>
         <TodoPage />
-      </Authenticator>
+      </SiteFrame>
     );
   }
 
   if (pathname === "/schwab-market-info") {
     return (
-      <Authenticator>
+      <SiteFrame>
         <SchwabMarketInfo />
-      </Authenticator>
+      </SiteFrame>
     );
   }
 
   if (pathname === "/tasty-chart") {
     return (
-      <Authenticator>
+      <SiteFrame>
         <TastyChart />
-      </Authenticator>
+      </SiteFrame>
     );
   }
 
   if (pathname === "/tasty-market-info") {
     return (
-      <Authenticator>
+      <SiteFrame>
         <TastyMarketInfo />
-      </Authenticator>
+      </SiteFrame>
     );
   }
 
   if (pathname === "/tasty-auth") {
     return (
-      <Authenticator>
+      <SiteFrame>
         <TastyAuthPage />
-      </Authenticator>
+      </SiteFrame>
     );
   }
 
   if (pathname === "/tasty-auth-popup") {
     return (
-      <Authenticator>
+      <SiteFrame>
         <TastyAuthPopupPage />
-      </Authenticator>
+      </SiteFrame>
     );
   }
 
-  return <NotFoundPage />;
+  return (
+    <SiteFrame>
+      <NotFoundPage />
+    </SiteFrame>
+  );
 }
 
 export default App;

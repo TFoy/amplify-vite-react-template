@@ -1,9 +1,11 @@
 import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 import TastytradeClient from "@tastytrade/api";
+import { getAuthenticatedUserSub, getUserScopedParameterName } from "../shared/user-auth";
 
 type ApiGatewayEvent = {
   rawPath?: string;
   queryStringParameters?: Record<string, string | undefined>;
+  headers?: Record<string, string | undefined>;
 };
 
 type TokenRecord = {
@@ -81,14 +83,14 @@ async function getParameterValue(name: string) {
   return result.Parameter.Value;
 }
 
-async function getStoredTokens() {
-  const parameterName = getRequiredEnvironment("TASTY_TOKEN_PARAMETER_NAME");
+async function getStoredTokens(userSub: string) {
+  const parameterPrefix = getRequiredEnvironment("TASTY_TOKEN_PARAMETER_NAME");
   let result;
 
   try {
     result = await ssmClient.send(
       new GetParameterCommand({
-        Name: parameterName,
+        Name: getUserScopedParameterName(parameterPrefix, userSub),
         WithDecryption: true,
       }),
     );
@@ -173,9 +175,9 @@ function extractAxiosErrorDetails(error: unknown) {
   };
 }
 
-async function getConnectionStatus() {
+async function getConnectionStatus(userSub: string) {
   try {
-    const storedTokens = await getStoredTokens();
+    const storedTokens = await getStoredTokens(userSub);
     if (!storedTokens?.refreshToken) {
       return {
         connected: false,
@@ -197,8 +199,8 @@ async function getConnectionStatus() {
   }
 }
 
-async function getRestMarketInfo(symbol: string) {
-  const storedTokens = await getStoredTokens();
+async function getRestMarketInfo(symbol: string, userSub: string) {
+  const storedTokens = await getStoredTokens(userSub);
   if (!storedTokens?.refreshToken) {
     return {
       ok: false,
@@ -237,10 +239,12 @@ export const handler = async (event: ApiGatewayEvent) => {
     const query = event.queryStringParameters ?? {};
 
     if (path.endsWith("/tasty-rest/status")) {
-      return jsonResponse(200, await getConnectionStatus());
+      const userSub = await getAuthenticatedUserSub(event);
+      return jsonResponse(200, await getConnectionStatus(userSub));
     }
 
     if (path.endsWith("/tasty-rest/market-info")) {
+      const userSub = await getAuthenticatedUserSub(event);
       const symbol = query.symbol?.trim();
       if (!symbol) {
         return jsonResponse(400, {
@@ -248,7 +252,7 @@ export const handler = async (event: ApiGatewayEvent) => {
         });
       }
 
-      const marketData = await getRestMarketInfo(symbol);
+      const marketData = await getRestMarketInfo(symbol, userSub);
       if (!marketData.ok) {
         return jsonResponse(marketData.status, {
           error: "Failed to retrieve market data from TastyTrade REST endpoint.",

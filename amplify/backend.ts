@@ -41,6 +41,12 @@ const tastyRestIntegration = new HttpLambdaIntegration(
 );
 
 schwabHttpApi.addRoutes({
+  path: "/schwab/authorize-url",
+  methods: [HttpMethod.GET],
+  integration: schwabIntegration,
+});
+
+schwabHttpApi.addRoutes({
   path: "/schwab/authorize",
   methods: [HttpMethod.GET],
   integration: schwabIntegration,
@@ -62,6 +68,12 @@ schwabHttpApi.addRoutes({
   path: "/schwab/status",
   methods: [HttpMethod.GET],
   integration: schwabIntegration,
+});
+
+schwabHttpApi.addRoutes({
+  path: "/tasty/authorize-url",
+  methods: [HttpMethod.GET],
+  integration: tastyIntegration,
 });
 
 schwabHttpApi.addRoutes({
@@ -147,11 +159,22 @@ backend.tastyRestMarketInfo.resources.lambda.addToRolePolicy(
   }),
 );
 
+const userPoolId = backend.auth.resources.userPool.userPoolId;
+const userPoolClientId = backend.auth.resources.userPoolClient.userPoolClientId;
+
+backend.schwabMarketInfo.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
+backend.schwabMarketInfo.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
+backend.tastyMarketInfo.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
+backend.tastyMarketInfo.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
+backend.tastyRestMarketInfo.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
+backend.tastyRestMarketInfo.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
+
 backend.addOutput({
   custom: {
     schwab: {
       api_url: apiBaseUrl,
       callback_url: callbackUrl,
+      authorize_url_json: `${apiBaseUrl}schwab/authorize-url`,
       authorize_url: `${apiBaseUrl}schwab/authorize`,
       market_info_url: `${apiBaseUrl}schwab/market-info`,
       status_url: `${apiBaseUrl}schwab/status`,
@@ -159,6 +182,7 @@ backend.addOutput({
     tasty: {
       api_url: apiBaseUrl,
       callback_url: tastyCallbackUrl,
+      authorize_url_json: `${apiBaseUrl}tasty/authorize-url`,
       authorize_url: `${apiBaseUrl}tasty/authorize`,
       market_info_url: `${apiBaseUrl}tasty/market-info`,
       status_url: `${apiBaseUrl}tasty/status`,

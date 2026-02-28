@@ -1,5 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useAuthenticator } from "@aws-amplify/ui-react";
 import outputs from "../amplify_outputs.json";
+import { getAuthHeaders } from "./auth";
+import { loadLastTicker, saveLastTicker } from "./userPreferences";
 
 type TastyMarketInfoResponse = {
   symbol: string;
@@ -151,6 +154,7 @@ function formatTimestamp(value: string) {
 }
 
 function TastyMarketInfo() {
+  const { user } = useAuthenticator((context) => [context.user]);
   const [symbol, setSymbol] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
@@ -241,6 +245,11 @@ function TastyMarketInfo() {
   }
 
   async function startOAuthPopupFlow() {
+    if (!user) {
+      setConnectionStatus("Sign in to use TastyTrade.");
+      return false;
+    }
+
     setIsConnecting(true);
     setConnectionStatus("Opening TastyTrade sign-in...");
 
@@ -263,7 +272,26 @@ function TastyMarketInfo() {
   }
 
   useEffect(() => {
+    if (!user) {
+      setSymbol("");
+      setConnectionStatus("Sign in to use TastyTrade.");
+      setIsConnecting(false);
+      return;
+    }
+
+    void loadLastTicker("tasty-market-info").then((savedTicker) => {
+      if (savedTicker) {
+        setSymbol(savedTicker);
+      }
+    });
+  }, [user]);
+
+  useEffect(() => {
     async function checkConnectionStatus() {
+      if (!user) {
+        return;
+      }
+
       if (!apiBaseUrl || !statusUrl) {
         setConnectionStatus("Tasty REST API URL is not configured.");
         setIsConnecting(false);
@@ -271,7 +299,9 @@ function TastyMarketInfo() {
       }
 
       try {
-        const response = await fetch(statusUrl);
+        const response = await fetch(statusUrl, {
+          headers: await getAuthHeaders(),
+        });
         const payload = await parseApiResponse(response);
 
         if (response.ok && payload.connected === true) {
@@ -298,7 +328,7 @@ function TastyMarketInfo() {
     }
 
     void checkConnectionStatus();
-  }, [apiBaseUrl, statusUrl]);
+  }, [apiBaseUrl, statusUrl, user]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -314,13 +344,22 @@ function TastyMarketInfo() {
       return;
     }
 
+    if (!user) {
+      setError("Sign in to use TastyTrade.");
+      return;
+    }
+
     setError(null);
     setResult(null);
     setIsLoading(true);
+    await saveLastTicker("tasty-market-info", trimmedSymbol);
 
     try {
       const response = await fetch(
         `${apiBaseUrl}/tasty-rest/market-info?symbol=${encodeURIComponent(trimmedSymbol)}`,
+        {
+          headers: await getAuthHeaders(),
+        },
       );
       const payload = await parseApiResponse(response);
 
@@ -332,6 +371,9 @@ function TastyMarketInfo() {
 
         const retryResponse = await fetch(
           `${apiBaseUrl}/tasty-rest/market-info?symbol=${encodeURIComponent(trimmedSymbol)}`,
+          {
+            headers: await getAuthHeaders(),
+          },
         );
         const retryPayload = await parseApiResponse(retryResponse);
         if (!retryResponse.ok) {

@@ -6,6 +6,21 @@ This repository provides a starter template for creating applications using Reac
 
 This template equips you with a foundational React application integrated with AWS Amplify, streamlined for scalability and performance. It is ideal for developers looking to jumpstart their project with pre-configured AWS services like Cognito, AppSync, and DynamoDB.
 
+## Site-Wide Auth And User Preferences
+
+Authentication is now site-wide. Every page shows a user menu in the upper-left:
+
+- signed-out users can open the menu and sign in
+- signed-in users see their identity and can sign out from the same menu
+
+Ticker defaults are stored per signed-in user in the `UserPreference` model:
+
+- `schwab-market-info`
+- `tasty-market-info`
+- `tasty-chart`
+
+Each page restores the last ticker used by that user instead of starting blank.
+
 ## Features
 
 - **Authentication**: Setup with Amazon Cognito for secure user authentication.
@@ -45,6 +60,14 @@ If needed for local-only testing, you can also define:
 
 - `VITE_SCHWAB_API_URL` (for example in `.env.local`) to point the frontend to your API base URL.
 
+### Schwab tokens are now per user
+
+Schwab OAuth tokens are no longer stored in one shared parameter. They are now stored per Cognito user under:
+
+- `/amplify/schwab/oauth/tokens/<cognito-sub>`
+
+That means each signed-in user must connect Schwab once to populate their own token record.
+
 ## Tasty Chart Setup
 
 This project includes a `TastyChart` page (`/tasty-chart`) backed by an Amplify function and HTTP API routes:
@@ -82,6 +105,14 @@ After deploy/sandbox synth, register this exact callback URL in your TastyTrade 
 - `authorization_code`: returned by TastyTrade after login
 - `access_token`: short-lived token used for API calls (cached in `/amplify/tasty/oauth/tokens`)
 - `refresh_token`: returned during token exchange and reused automatically (cached in `/amplify/tasty/oauth/tokens`)
+
+### Tasty tokens are now per user
+
+Tasty OAuth tokens are no longer shared across the whole app. They are now stored per Cognito user under:
+
+- `/amplify/tasty/oauth/tokens/<cognito-sub>`
+
+That means each signed-in user must complete Tasty OAuth once before using `TastyChart` or `TastyMarketInfo`.
 
 ## Tasty Market Info Setup
 

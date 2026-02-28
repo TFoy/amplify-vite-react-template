@@ -1,5 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useAuthenticator } from "@aws-amplify/ui-react";
 import outputs from "../amplify_outputs.json";
+import { getAuthHeaders } from "./auth";
+import { loadLastTicker, saveLastTicker } from "./userPreferences";
 
 type SchwabMarketInfoResponse = {
   symbol: string;
@@ -112,6 +115,7 @@ function formatTimestamp(value: string) {
 }
 
 function SchwabMarketInfo() {
+  const { user } = useAuthenticator((context) => [context.user]);
   const [symbol, setSymbol] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isConnecting, setIsConnecting] = useState(true);
@@ -121,8 +125,8 @@ function SchwabMarketInfo() {
 
   const apiBaseUrl = useMemo(() => {
     const configUrl =
-      (outputs as { custom?: { schwab?: { api_url?: string } } }).custom?.schwab
-        ?.api_url ?? import.meta.env.VITE_SCHWAB_API_URL;
+      (outputs as { custom?: { schwab?: { api_url?: string } } }).custom?.schwab?.api_url ??
+      import.meta.env.VITE_SCHWAB_API_URL;
 
     return configUrl?.replace(/\/$/, "") ?? "";
   }, []);
@@ -130,8 +134,50 @@ function SchwabMarketInfo() {
   const authorizeUrl = apiBaseUrl ? `${apiBaseUrl}/schwab/authorize` : "";
   const statusUrl = apiBaseUrl ? `${apiBaseUrl}/schwab/status` : "";
 
+  async function connectSchwab() {
+    if (!user || !apiBaseUrl) {
+      setError("Sign in to use Schwab.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/schwab/authorize-url`, {
+        headers: await getAuthHeaders(),
+      });
+      const payload = (await response.json()) as { authorizeUrl?: string; error?: string };
+      if (!response.ok || !payload.authorizeUrl) {
+        throw new Error(payload.error ?? "Unable to start Schwab OAuth.");
+      }
+
+      window.location.assign(payload.authorizeUrl);
+    } catch (connectError) {
+      setError(
+        connectError instanceof Error ? connectError.message : "Unable to start Schwab OAuth.",
+      );
+    }
+  }
+
+  useEffect(() => {
+    if (!user) {
+      setSymbol("");
+      setConnectionStatus("Sign in to use Schwab.");
+      setIsConnecting(false);
+      return;
+    }
+
+    void loadLastTicker("schwab-market-info").then((savedTicker) => {
+      if (savedTicker) {
+        setSymbol(savedTicker);
+      }
+    });
+  }, [user]);
+
   useEffect(() => {
     async function checkConnectionStatus() {
+      if (!user) {
+        return;
+      }
+
       if (!apiBaseUrl || !statusUrl) {
         setConnectionStatus("Schwab API URL is not configured.");
         setIsConnecting(false);
@@ -139,7 +185,9 @@ function SchwabMarketInfo() {
       }
 
       try {
-        const response = await fetch(statusUrl);
+        const response = await fetch(statusUrl, {
+          headers: await getAuthHeaders(),
+        });
         const payload = (await response.json()) as {
           connected?: boolean;
           reason?: string;
@@ -163,7 +211,7 @@ function SchwabMarketInfo() {
     }
 
     void checkConnectionStatus();
-  }, [apiBaseUrl, statusUrl]);
+  }, [apiBaseUrl, statusUrl, user]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -179,13 +227,22 @@ function SchwabMarketInfo() {
       return;
     }
 
+    if (!user) {
+      setError("Sign in to use Schwab.");
+      return;
+    }
+
     setError(null);
     setResult(null);
     setIsLoading(true);
+    await saveLastTicker("schwab-market-info", trimmedSymbol);
 
     try {
       const response = await fetch(
         `${apiBaseUrl}/schwab/market-info?symbol=${encodeURIComponent(trimmedSymbol)}`,
+        {
+          headers: await getAuthHeaders(),
+        },
       );
       const payload = (await response.json()) as {
         error?: string;
@@ -219,7 +276,9 @@ function SchwabMarketInfo() {
       <p>{connectionStatus}</p>
       {authorizeUrl ? (
         <p>
-          <a href={authorizeUrl}>Connect Schwab OAuth</a>
+          <button onClick={connectSchwab} type="button">
+            Connect Schwab OAuth
+          </button>
         </p>
       ) : null}
       <form onSubmit={handleSubmit}>

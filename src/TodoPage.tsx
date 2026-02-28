@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { useAuthenticator } from "@aws-amplify/ui-react";
 import { generateClient } from "aws-amplify/data";
@@ -6,16 +6,21 @@ import { generateClient } from "aws-amplify/data";
 const client = generateClient<Schema>();
 
 function TodoPage() {
-  const { user, signOut } = useAuthenticator();
+  const { user } = useAuthenticator((context) => [context.user]);
   const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
 
   useEffect(() => {
+    if (!user) {
+      setTodos([]);
+      return;
+    }
+
     const subscription = client.models.Todo.observeQuery().subscribe({
       next: (data) => setTodos([...data.items]),
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [user]);
 
   function createTodo() {
     client.models.Todo.create({ content: window.prompt("Todo content") });
@@ -25,10 +30,20 @@ function TodoPage() {
     client.models.Todo.delete({ id });
   }
 
+  if (!user) {
+    return (
+      <main>
+        <a href="/">Back to landing page</a>
+        <h1>Notes</h1>
+        <p>Sign in from the menu to access your notes.</p>
+      </main>
+    );
+  }
+
   return (
     <main>
       <a href="/">Back to landing page</a>
-      <h1>{user?.signInDetails?.loginId}'s todos</h1>
+      <h1>{user.signInDetails?.loginId}'s todos</h1>
       <button onClick={createTodo}>+ new</button>
       <ul>
         {todos.map((todo) => (
@@ -44,7 +59,6 @@ function TodoPage() {
           Review next step of this tutorial.
         </a>
       </div>
-      <button onClick={signOut}>Sign out</button>
     </main>
   );
 }

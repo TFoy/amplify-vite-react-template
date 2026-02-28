@@ -1,6 +1,9 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Chart } from "chart.js/auto";
+import { useAuthenticator } from "@aws-amplify/ui-react";
 import outputs from "../amplify_outputs.json";
+import { getAuthHeaders } from "./auth";
+import { loadLastTicker, saveLastTicker } from "./userPreferences";
 
 type TastyChartResponse = {
   symbol: string;
@@ -101,6 +104,7 @@ function formatTimestamp(value: string) {
 }
 
 function TastyChart() {
+  const { user } = useAuthenticator((context) => [context.user]);
   const [symbol, setSymbol] = useState("");
   const [isConnecting, setIsConnecting] = useState(true);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -232,6 +236,11 @@ function TastyChart() {
   }
 
   async function startOAuthPopupFlow() {
+    if (!user) {
+      setConnectionStatus("Sign in to use TastyTrade.");
+      return false;
+    }
+
     setIsConnecting(true);
     setConnectionStatus("Opening TastyTrade sign-in...");
 
@@ -250,8 +259,23 @@ function TastyChart() {
       setConnectionStatus("TastyTrade sign-in was cancelled or did not complete.");
     }
 
-      return connected;
+    return connected;
   }
+
+  useEffect(() => {
+    if (!user) {
+      setSymbol("");
+      setConnectionStatus("Sign in to use TastyTrade.");
+      setIsConnecting(false);
+      return;
+    }
+
+    void loadLastTicker("tasty-chart").then((savedTicker) => {
+      if (savedTicker) {
+        setSymbol(savedTicker);
+      }
+    });
+  }, [user]);
 
   useEffect(() => {
     const context = canvasRef.current?.getContext("2d");
@@ -304,6 +328,10 @@ function TastyChart() {
 
   useEffect(() => {
     async function checkConnectionStatus() {
+      if (!user) {
+        return;
+      }
+
       if (!apiBaseUrl || !statusUrl) {
         setConnectionStatus("Tasty API URL is not configured.");
         setIsConnecting(false);
@@ -311,7 +339,9 @@ function TastyChart() {
       }
 
       try {
-        const response = await fetch(statusUrl);
+        const response = await fetch(statusUrl, {
+          headers: await getAuthHeaders(),
+        });
         const payload = (await response.json()) as {
           connected?: boolean;
           reason?: string;
@@ -347,7 +377,7 @@ function TastyChart() {
     }
 
     void checkConnectionStatus();
-  }, [apiBaseUrl, statusUrl]);
+  }, [apiBaseUrl, statusUrl, user]);
 
   useEffect(() => {
     return () => {
@@ -361,6 +391,9 @@ function TastyChart() {
     try {
       const response = await fetch(
         `${apiBaseUrl}/tasty/market-info?symbol=${encodeURIComponent(trimmedSymbol)}`,
+        {
+          headers: await getAuthHeaders(),
+        },
       );
       const payload = await parseApiResponse(response);
 
@@ -424,6 +457,11 @@ function TastyChart() {
       return;
     }
 
+    if (!user) {
+      setError("Sign in to use TastyTrade.");
+      return;
+    }
+
     if (intervalRef.current !== null) {
       window.clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -433,6 +471,7 @@ function TastyChart() {
     setError(null);
     setIsStreaming(true);
     setStreamStatus(`Connecting stream for ${trimmedSymbol}...`);
+    await saveLastTicker("tasty-chart", trimmedSymbol);
 
     const firstFetchSucceeded = await fetchQuote(trimmedSymbol);
     if (!firstFetchSucceeded) {

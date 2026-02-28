@@ -3,6 +3,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { SSMClient, GetParameterCommand, PutParameterCommand } from "@aws-sdk/client-ssm";
 import TastytradeClient from "@tastytrade/api";
 import WebSocket from "ws";
+import { getAuthenticatedUserSub, getUserScopedParameterName } from "../shared/user-auth";
 
 type ApiGatewayEvent = {
   rawPath?: string;
@@ -28,6 +29,13 @@ type TastyConnectionStatus = {
   detail?: string;
 };
 
+type SignedStatePayload = {
+  nonce: string;
+  returnTo: string;
+  userSub: string;
+  issuedAt: number;
+};
+
 const ssmClient = new SSMClient();
 
 Reflect.set(globalThis, "WebSocket", WebSocket);
@@ -40,10 +48,6 @@ Reflect.set(globalThis, "window", {
 const DEFAULT_HEADERS = {
   "Content-Type": "application/json",
   "Access-Control-Allow-Origin": "*",
-};
-
-const HTML_HEADERS = {
-  "Content-Type": "text/html; charset=utf-8",
 };
 
 let cachedCredentials:
@@ -88,23 +92,6 @@ function jsonResponse(statusCode: number, body: Record<string, unknown>) {
     statusCode,
     headers: DEFAULT_HEADERS,
     body: JSON.stringify(body),
-  };
-}
-
-function htmlResponse(
-  statusCode: number,
-  body: string,
-  headers?: Record<string, string>,
-  cookies?: string[],
-) {
-  return {
-    statusCode,
-    headers: {
-      ...HTML_HEADERS,
-      ...headers,
-    },
-    cookies,
-    body,
   };
 }
 
@@ -164,10 +151,6 @@ function getTastyBaseUrl() {
 
 function getTastyTokenUrl() {
   return new URL(getRequiredEnvironment("TASTY_TOKEN_PATH"), getTastyBaseUrl()).toString();
-}
-
-function getTastyMarketUrl() {
-  return new URL(getRequiredEnvironment("TASTY_MARKET_PATH"), getTastyBaseUrl()).toString();
 }
 
 function getTastySdkConfig() {
@@ -241,12 +224,13 @@ function signValue(value: string, sessionSecret: string) {
   return createHmac("sha256", sessionSecret).update(value).digest("hex");
 }
 
-function createSignedState(returnTo: string, sessionSecret: string) {
+function createSignedState(returnTo: string, userSub: string, sessionSecret: string) {
   const payload = JSON.stringify({
     nonce: randomUUID(),
     returnTo,
+    userSub,
     issuedAt: Date.now(),
-  });
+  } satisfies SignedStatePayload);
   const encodedPayload = toBase64Url(payload);
   const signature = signValue(encodedPayload, sessionSecret);
   return `${encodedPayload}.${signature}`;
@@ -278,13 +262,14 @@ function parseSignedState(value: string | undefined, sessionSecret: string) {
   }
 
   try {
-    const parsed = JSON.parse(fromBase64Url(encodedPayload)) as {
-      nonce?: string;
-      returnTo?: string;
-      issuedAt?: number;
-    };
+    const parsed = JSON.parse(fromBase64Url(encodedPayload)) as SignedStatePayload;
 
-    if (typeof parsed.returnTo !== "string" || !parsed.returnTo) {
+    if (
+      typeof parsed.returnTo !== "string" ||
+      !parsed.returnTo ||
+      typeof parsed.userSub !== "string" ||
+      !parsed.userSub
+    ) {
       return null;
     }
 
@@ -294,13 +279,13 @@ function parseSignedState(value: string | undefined, sessionSecret: string) {
   }
 }
 
-async function createAuthorizeResponse(event: ApiGatewayEvent) {
+async function createAuthorizeUrl(event: ApiGatewayEvent, userSub: string) {
   const { clientId, sessionSecret } = await getTastyCredentials();
   const redirectUri = getRedirectUri(event);
   const authorizeUrl = getRequiredEnvironment("TASTY_AUTHORIZE_URL");
   const scope = getRequiredEnvironment("TASTY_OAUTH_SCOPES");
   const returnTo = getQueryValue(event, "return_to") ?? "";
-  const signedState = createSignedState(returnTo, sessionSecret);
+  const signedState = createSignedState(returnTo, userSub, sessionSecret);
 
   const url = new URL(authorizeUrl);
   url.searchParams.set("response_type", "code");
@@ -309,12 +294,7 @@ async function createAuthorizeResponse(event: ApiGatewayEvent) {
   url.searchParams.set("scope", scope);
   url.searchParams.set("state", signedState);
 
-  return {
-    statusCode: 302,
-    headers: {
-      Location: url.toString(),
-    },
-  };
+  return url.toString();
 }
 
 function extractTokenPayload(payload: unknown): TokenPayload {
@@ -348,11 +328,11 @@ function buildTokenRecord(tokenPayload: TokenPayload, existingRefreshToken?: str
   };
 }
 
-async function saveTokens(tokens: TokenRecord) {
-  const parameterName = getRequiredEnvironment("TASTY_TOKEN_PARAMETER_NAME");
+async function saveTokens(tokens: TokenRecord, userSub: string) {
+  const parameterPrefix = getRequiredEnvironment("TASTY_TOKEN_PARAMETER_NAME");
   await ssmClient.send(
     new PutParameterCommand({
-      Name: parameterName,
+      Name: getUserScopedParameterName(parameterPrefix, userSub),
       Value: JSON.stringify(tokens),
       Type: "SecureString",
       Overwrite: true,
@@ -360,14 +340,14 @@ async function saveTokens(tokens: TokenRecord) {
   );
 }
 
-async function getStoredTokens() {
-  const parameterName = getRequiredEnvironment("TASTY_TOKEN_PARAMETER_NAME");
+async function getStoredTokens(userSub: string) {
+  const parameterPrefix = getRequiredEnvironment("TASTY_TOKEN_PARAMETER_NAME");
   let result;
 
   try {
     result = await ssmClient.send(
       new GetParameterCommand({
-        Name: parameterName,
+        Name: getUserScopedParameterName(parameterPrefix, userSub),
         WithDecryption: true,
       }),
     );
@@ -453,7 +433,7 @@ async function requestToken(params: URLSearchParams) {
   return tokenPayload;
 }
 
-async function exchangeCodeForTokens(code: string, redirectUri: string) {
+async function exchangeCodeForTokens(code: string, redirectUri: string, userSub: string) {
   const params = new URLSearchParams({
     grant_type: "authorization_code",
     redirect_uri: redirectUri,
@@ -467,11 +447,11 @@ async function exchangeCodeForTokens(code: string, redirectUri: string) {
     throw new Error("Token exchange succeeded but no refresh token was returned.");
   }
 
-  await saveTokens(tokens);
+  await saveTokens(tokens, userSub);
   return tokens;
 }
 
-async function refreshAccessToken(tokens: TokenRecord) {
+async function refreshAccessToken(tokens: TokenRecord, userSub: string) {
   const params = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: tokens.refreshToken,
@@ -479,7 +459,7 @@ async function refreshAccessToken(tokens: TokenRecord) {
 
   const tokenPayload = await requestToken(params);
   const refreshedTokens = buildTokenRecord(tokenPayload, tokens.refreshToken);
-  await saveTokens(refreshedTokens);
+  await saveTokens(refreshedTokens, userSub);
   return refreshedTokens;
 }
 
@@ -489,8 +469,8 @@ function isExpired(expiresAt: string) {
   return Number.isNaN(expirationMs) || expirationMs - bufferMs <= Date.now();
 }
 
-async function getValidAccessToken() {
-  const storedTokens = await getStoredTokens();
+async function getValidAccessToken(userSub: string) {
+  const storedTokens = await getStoredTokens(userSub);
   if (!storedTokens?.refreshToken) {
     return null;
   }
@@ -499,13 +479,13 @@ async function getValidAccessToken() {
     return storedTokens.accessToken;
   }
 
-  const refreshedTokens = await refreshAccessToken(storedTokens);
+  const refreshedTokens = await refreshAccessToken(storedTokens, userSub);
   return refreshedTokens.accessToken;
 }
 
-async function getConnectionStatus() {
+async function getConnectionStatus(userSub: string) {
   try {
-    const accessToken = await getValidAccessToken();
+    const accessToken = await getValidAccessToken(userSub);
     return { connected: Boolean(accessToken) };
   } catch (error) {
     const message = describeUnknownError(error);
@@ -609,11 +589,10 @@ async function getMarketInfo(symbol: string, refreshToken: string) {
   });
 }
 
-async function getDebugInfo(event: ApiGatewayEvent) {
+async function getDebugInfo(event: ApiGatewayEvent, userSub: string) {
   const { clientId, clientSecret, sessionSecret } = await getTastyCredentials();
   const redirectUri = getRedirectUri(event);
   const tokenUrl = getTastyTokenUrl();
-  const marketUrl = getTastyMarketUrl();
   const authorizeUrl = getRequiredEnvironment("TASTY_AUTHORIZE_URL");
   const code = getQueryValue(event, "code") ?? "";
   const state = getQueryValue(event, "state") ?? "";
@@ -623,7 +602,6 @@ async function getDebugInfo(event: ApiGatewayEvent) {
     environment: process.env.TASTY_ENV ?? "prod",
     authorizeUrl,
     tokenUrl,
-    marketUrl,
     redirectUri,
     hasClientId: Boolean(clientId),
     hasClientSecret: Boolean(clientSecret),
@@ -633,6 +611,8 @@ async function getDebugInfo(event: ApiGatewayEvent) {
     stateLength: state.length,
     codeLength: code.length,
     parsedStateReturnTo: parsedState?.returnTo ?? null,
+    parsedStateUserSub: parsedState?.userSub ?? null,
+    requestedUserSub: userSub,
   };
 }
 
@@ -641,8 +621,21 @@ export const handler = async (event: ApiGatewayEvent) => {
     const path = event.rawPath ?? "";
     const query = event.queryStringParameters ?? {};
 
+    if (path.endsWith("/tasty/authorize-url")) {
+      const userSub = await getAuthenticatedUserSub(event);
+      return jsonResponse(200, {
+        authorizeUrl: await createAuthorizeUrl(event, userSub),
+      });
+    }
+
     if (path.endsWith("/tasty/authorize")) {
-      return createAuthorizeResponse(event);
+      const userSub = await getAuthenticatedUserSub(event);
+      return {
+        statusCode: 302,
+        headers: {
+          Location: await createAuthorizeUrl(event, userSub),
+        },
+      };
     }
 
     if (path.endsWith("/tasty/callback")) {
@@ -651,10 +644,7 @@ export const handler = async (event: ApiGatewayEvent) => {
       const parsedState = parseSignedState(query.state, sessionSecret);
       const returnTo = parsedState?.returnTo || "/tasty-auth-popup";
 
-      if (
-        !code ||
-        !parsedState
-      ) {
+      if (!code || !parsedState) {
         return {
           statusCode: 302,
           headers: {
@@ -663,7 +653,7 @@ export const handler = async (event: ApiGatewayEvent) => {
         };
       }
 
-      await exchangeCodeForTokens(code, getRedirectUri(event));
+      await exchangeCodeForTokens(code, getRedirectUri(event), parsedState.userSub);
       return {
         statusCode: 302,
         headers: {
@@ -673,20 +663,23 @@ export const handler = async (event: ApiGatewayEvent) => {
     }
 
     if (path.endsWith("/tasty/status")) {
-      return jsonResponse(200, await getConnectionStatus());
+      const userSub = await getAuthenticatedUserSub(event);
+      return jsonResponse(200, await getConnectionStatus(userSub));
     }
 
     if (path.endsWith("/tasty/debug")) {
-      return jsonResponse(200, await getDebugInfo(event));
+      const userSub = await getAuthenticatedUserSub(event);
+      return jsonResponse(200, await getDebugInfo(event, userSub));
     }
 
     if (path.endsWith("/tasty/market-info")) {
+      const userSub = await getAuthenticatedUserSub(event);
       const symbol = query.symbol?.trim();
       if (!symbol) {
         return jsonResponse(400, { error: "Query parameter 'symbol' is required." });
       }
 
-      const storedTokens = await getStoredTokens();
+      const storedTokens = await getStoredTokens(userSub);
       if (!storedTokens?.refreshToken) {
         return jsonResponse(401, {
           error: "TastyTrade is not connected yet. Start OAuth first.",

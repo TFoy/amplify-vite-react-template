@@ -1,4 +1,6 @@
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { SSMClient, GetParameterCommand, PutParameterCommand } from "@aws-sdk/client-ssm";
+import { getAuthenticatedUserSub, getUserScopedParameterName } from "../shared/user-auth";
 
 type ApiGatewayEvent = {
   rawPath?: string;
@@ -18,6 +20,12 @@ type SchwabConnectionStatus = {
   detail?: string;
 };
 
+type SignedStatePayload = {
+  nonce: string;
+  userSub: string;
+  issuedAt: number;
+};
+
 const ssmClient = new SSMClient();
 
 const DEFAULT_HEADERS = {
@@ -28,6 +36,7 @@ const DEFAULT_HEADERS = {
 const HTML_HEADERS = {
   "Content-Type": "text/html; charset=utf-8",
 };
+
 let cachedCredentials: { appKey: string; appSecret: string } | null = null;
 
 function getRequiredEnvironment(name: string) {
@@ -37,6 +46,14 @@ function getRequiredEnvironment(name: string) {
   }
 
   return value;
+}
+
+function jsonResponse(statusCode: number, body: Record<string, unknown>) {
+  return {
+    statusCode,
+    headers: DEFAULT_HEADERS,
+    body: JSON.stringify(body),
+  };
 }
 
 async function getParameterValue(name: string) {
@@ -82,7 +99,69 @@ function getRedirectUri(event: ApiGatewayEvent) {
   return `${protocol}://${host}/schwab/callback`;
 }
 
-async function createAuthUrl(redirectUri: string) {
+function toBase64Url(value: string) {
+  return Buffer.from(value, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function fromBase64Url(value: string) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
+  return Buffer.from(`${normalized}${padding}`, "base64").toString("utf8");
+}
+
+function signValue(value: string, secret: string) {
+  return createHmac("sha256", secret).update(value).digest("hex");
+}
+
+async function createSignedState(userSub: string) {
+  const { appSecret } = await getSchwabCredentials();
+  const payload = JSON.stringify({
+    nonce: randomUUID(),
+    userSub,
+    issuedAt: Date.now(),
+  } satisfies SignedStatePayload);
+  const encodedPayload = toBase64Url(payload);
+  return `${encodedPayload}.${signValue(encodedPayload, appSecret)}`;
+}
+
+async function parseSignedState(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const separator = value.lastIndexOf(".");
+  if (separator === -1) {
+    return null;
+  }
+
+  const encodedPayload = value.slice(0, separator);
+  const signature = value.slice(separator + 1);
+  const { appSecret } = await getSchwabCredentials();
+  const expected = signValue(encodedPayload, appSecret);
+  const signatureBuffer = Buffer.from(signature, "utf8");
+  const expectedBuffer = Buffer.from(expected, "utf8");
+
+  if (signatureBuffer.length !== expectedBuffer.length) {
+    return null;
+  }
+
+  if (!timingSafeEqual(signatureBuffer, expectedBuffer)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(fromBase64Url(encodedPayload)) as SignedStatePayload;
+    return typeof parsed.userSub === "string" && parsed.userSub ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function createAuthUrl(redirectUri: string, userSub: string) {
   const { appKey } = await getSchwabCredentials();
   const authUrl = getRequiredEnvironment("SCHWAB_AUTH_URL");
   const scope = process.env.SCHWAB_OAUTH_SCOPE;
@@ -91,6 +170,7 @@ async function createAuthUrl(redirectUri: string) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", appKey);
   url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("state", await createSignedState(userSub));
   if (scope) {
     url.searchParams.set("scope", scope);
   }
@@ -98,11 +178,11 @@ async function createAuthUrl(redirectUri: string) {
   return url.toString();
 }
 
-async function saveTokens(tokens: TokenRecord) {
-  const parameterName = getRequiredEnvironment("SCHWAB_TOKEN_PARAMETER_NAME");
+async function saveTokens(tokens: TokenRecord, userSub: string) {
+  const parameterPrefix = getRequiredEnvironment("SCHWAB_TOKEN_PARAMETER_NAME");
   await ssmClient.send(
     new PutParameterCommand({
-      Name: parameterName,
+      Name: getUserScopedParameterName(parameterPrefix, userSub),
       Value: JSON.stringify(tokens),
       Type: "SecureString",
       Overwrite: true,
@@ -110,16 +190,22 @@ async function saveTokens(tokens: TokenRecord) {
   );
 }
 
-async function getStoredTokens() {
-  const parameterName = getRequiredEnvironment("SCHWAB_TOKEN_PARAMETER_NAME");
-  let result;
+async function getStoredTokens(userSub: string) {
+  const parameterPrefix = getRequiredEnvironment("SCHWAB_TOKEN_PARAMETER_NAME");
+
   try {
-    result = await ssmClient.send(
+    const result = await ssmClient.send(
       new GetParameterCommand({
-        Name: parameterName,
+        Name: getUserScopedParameterName(parameterPrefix, userSub),
         WithDecryption: true,
       }),
     );
+
+    if (!result.Parameter?.Value) {
+      return null;
+    }
+
+    return JSON.parse(result.Parameter.Value) as TokenRecord;
   } catch (error) {
     const errorName =
       typeof error === "object" && error !== null && "name" in error
@@ -132,19 +218,16 @@ async function getStoredTokens() {
 
     throw error;
   }
-
-  if (!result.Parameter?.Value) {
-    return null;
-  }
-
-  return JSON.parse(result.Parameter.Value) as TokenRecord;
 }
 
-function buildTokenRecord(tokenPayload: {
-  access_token: string;
-  refresh_token?: string;
-  expires_in: number;
-}, existingRefreshToken?: string) {
+function buildTokenRecord(
+  tokenPayload: {
+    access_token: string;
+    refresh_token?: string;
+    expires_in: number;
+  },
+  existingRefreshToken?: string,
+) {
   return {
     accessToken: tokenPayload.access_token,
     refreshToken: tokenPayload.refresh_token ?? existingRefreshToken ?? "",
@@ -183,7 +266,7 @@ async function requestToken(params: URLSearchParams) {
   };
 }
 
-async function exchangeAuthorizationCode(code: string, redirectUri: string) {
+async function exchangeAuthorizationCode(code: string, redirectUri: string, userSub: string) {
   const params = new URLSearchParams({
     grant_type: "authorization_code",
     code,
@@ -196,18 +279,18 @@ async function exchangeAuthorizationCode(code: string, redirectUri: string) {
     throw new Error("Token exchange succeeded but no refresh token was returned.");
   }
 
-  await saveTokens(tokens);
+  await saveTokens(tokens, userSub);
   return tokens;
 }
 
-async function refreshAccessToken(tokens: TokenRecord) {
+async function refreshAccessToken(tokens: TokenRecord, userSub: string) {
   const params = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: tokens.refreshToken,
   });
   const refreshedPayload = await requestToken(params);
   const refreshedTokens = buildTokenRecord(refreshedPayload, tokens.refreshToken);
-  await saveTokens(refreshedTokens);
+  await saveTokens(refreshedTokens, userSub);
   return refreshedTokens;
 }
 
@@ -217,8 +300,8 @@ function isExpired(expiresAt: string) {
   return Number.isNaN(expirationMs) || expirationMs - bufferMs <= Date.now();
 }
 
-async function getValidAccessToken() {
-  const storedTokens = await getStoredTokens();
+async function getValidAccessToken(userSub: string) {
+  const storedTokens = await getStoredTokens(userSub);
   if (!storedTokens?.accessToken || !storedTokens.refreshToken) {
     return null;
   }
@@ -227,13 +310,13 @@ async function getValidAccessToken() {
     return storedTokens.accessToken;
   }
 
-  const refreshedTokens = await refreshAccessToken(storedTokens);
+  const refreshedTokens = await refreshAccessToken(storedTokens, userSub);
   return refreshedTokens.accessToken;
 }
 
-async function getConnectionStatus() {
+async function getConnectionStatus(userSub: string) {
   try {
-    const accessToken = await getValidAccessToken();
+    const accessToken = await getValidAccessToken(userSub);
     return { connected: Boolean(accessToken) } satisfies SchwabConnectionStatus;
   } catch (error) {
     return {
@@ -265,41 +348,43 @@ async function getLevelOneEquities(symbol: string, accessToken: string) {
   };
 }
 
-function jsonResponse(statusCode: number, body: Record<string, unknown>) {
-  return {
-    statusCode,
-    headers: DEFAULT_HEADERS,
-    body: JSON.stringify(body),
-  };
-}
-
 export const handler = async (event: ApiGatewayEvent) => {
   try {
     const path = event.rawPath ?? "";
     const query = event.queryStringParameters ?? {};
 
+    if (path.endsWith("/schwab/authorize-url")) {
+      const userSub = await getAuthenticatedUserSub(event);
+      const redirectUri = getRedirectUri(event);
+      return jsonResponse(200, {
+        authorizeUrl: await createAuthUrl(redirectUri, userSub),
+      });
+    }
+
     if (path.endsWith("/schwab/authorize")) {
+      const userSub = await getAuthenticatedUserSub(event);
       const redirectUri = getRedirectUri(event);
       return {
         statusCode: 302,
         headers: {
-          Location: await createAuthUrl(redirectUri),
+          Location: await createAuthUrl(redirectUri, userSub),
         },
       };
     }
 
     if (path.endsWith("/schwab/callback")) {
       const code = query.code;
-      if (!code) {
+      const state = await parseSignedState(query.state);
+      if (!code || !state) {
         return {
           statusCode: 400,
           headers: HTML_HEADERS,
-          body: "<html><body><h1>Missing authorization code.</h1></body></html>",
+          body: "<html><body><h1>Missing authorization code or state.</h1></body></html>",
         };
       }
 
       const redirectUri = getRedirectUri(event);
-      await exchangeAuthorizationCode(code, redirectUri);
+      await exchangeAuthorizationCode(code, redirectUri, state.userSub);
       return {
         statusCode: 200,
         headers: HTML_HEADERS,
@@ -308,32 +393,34 @@ export const handler = async (event: ApiGatewayEvent) => {
     }
 
     if (path.endsWith("/schwab/status")) {
-      return jsonResponse(200, await getConnectionStatus());
+      const userSub = await getAuthenticatedUserSub(event);
+      return jsonResponse(200, await getConnectionStatus(userSub));
     }
 
     if (path.endsWith("/schwab/market-info")) {
+      const userSub = await getAuthenticatedUserSub(event);
       const symbol = query.symbol?.trim();
       if (!symbol) {
         return jsonResponse(400, { error: "Query parameter 'symbol' is required." });
       }
 
-      let accessToken = await getValidAccessToken();
+      let accessToken = await getValidAccessToken(userSub);
       if (!accessToken) {
         return jsonResponse(401, {
-          error: "Schwab is not connected yet. Open /schwab/authorize first.",
+          error: "Schwab is not connected yet. Connect OAuth first.",
         });
       }
 
       let marketData = await getLevelOneEquities(symbol, accessToken);
       if (marketData.status === 401) {
-        const storedTokens = await getStoredTokens();
+        const storedTokens = await getStoredTokens(userSub);
         if (!storedTokens) {
           return jsonResponse(401, {
-            error: "Schwab authorization expired. Reconnect using /schwab/authorize.",
+            error: "Schwab authorization expired. Reconnect OAuth.",
           });
         }
 
-        const refreshedTokens = await refreshAccessToken(storedTokens);
+        const refreshedTokens = await refreshAccessToken(storedTokens, userSub);
         accessToken = refreshedTokens.accessToken;
         marketData = await getLevelOneEquities(symbol, accessToken);
       }

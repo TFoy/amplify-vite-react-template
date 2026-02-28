@@ -12,6 +12,12 @@ type TokenRecord = {
   expiresAt: string;
 };
 
+type SchwabConnectionStatus = {
+  connected: boolean;
+  reason?: string;
+  detail?: string;
+};
+
 const ssmClient = new SSMClient();
 
 const DEFAULT_HEADERS = {
@@ -106,12 +112,26 @@ async function saveTokens(tokens: TokenRecord) {
 
 async function getStoredTokens() {
   const parameterName = getRequiredEnvironment("SCHWAB_TOKEN_PARAMETER_NAME");
-  const result = await ssmClient.send(
-    new GetParameterCommand({
-      Name: parameterName,
-      WithDecryption: true,
-    }),
-  );
+  let result;
+  try {
+    result = await ssmClient.send(
+      new GetParameterCommand({
+        Name: parameterName,
+        WithDecryption: true,
+      }),
+    );
+  } catch (error) {
+    const errorName =
+      typeof error === "object" && error !== null && "name" in error
+        ? String(error.name)
+        : "";
+
+    if (errorName === "ParameterNotFound") {
+      return null;
+    }
+
+    throw error;
+  }
 
   if (!result.Parameter?.Value) {
     return null;
@@ -211,6 +231,19 @@ async function getValidAccessToken() {
   return refreshedTokens.accessToken;
 }
 
+async function getConnectionStatus() {
+  try {
+    const accessToken = await getValidAccessToken();
+    return { connected: Boolean(accessToken) } satisfies SchwabConnectionStatus;
+  } catch (error) {
+    return {
+      connected: false,
+      reason: "unexpected_error",
+      detail: error instanceof Error ? error.message : "Unexpected server error.",
+    } satisfies SchwabConnectionStatus;
+  }
+}
+
 async function getLevelOneEquities(symbol: string, accessToken: string) {
   const marketDataUrl = getRequiredEnvironment("SCHWAB_LEVELONE_EQUITIES_URL");
   const url = new URL(marketDataUrl);
@@ -272,6 +305,10 @@ export const handler = async (event: ApiGatewayEvent) => {
         headers: HTML_HEADERS,
         body: "<html><body><h1>Schwab OAuth connected.</h1><p>You can close this tab.</p></body></html>",
       };
+    }
+
+    if (path.endsWith("/schwab/status")) {
+      return jsonResponse(200, await getConnectionStatus());
     }
 
     if (path.endsWith("/schwab/market-info")) {

@@ -22,6 +22,7 @@ This project includes a `SchwabMarketInfo` page (`/schwab-market-info`) backed b
 
 - `GET /schwab/authorize`: starts Schwab OAuth
 - `GET /schwab/callback`: OAuth callback handler
+- `GET /schwab/status`: returns whether a stored Schwab token is still usable or refreshable
 - `GET /schwab/market-info?symbol=...`: retrieves quote data from Schwab Level One Equities endpoint
 
 Set your Schwab credentials in AWS Systems Manager Parameter Store:

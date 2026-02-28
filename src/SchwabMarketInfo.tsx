@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import outputs from "../amplify_outputs.json";
 
 type SchwabMarketInfoResponse = {
@@ -114,6 +114,8 @@ function formatTimestamp(value: string) {
 function SchwabMarketInfo() {
   const [symbol, setSymbol] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState("Checking Schwab connection...");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SchwabMarketInfoResponse | null>(null);
 
@@ -126,6 +128,42 @@ function SchwabMarketInfo() {
   }, []);
 
   const authorizeUrl = apiBaseUrl ? `${apiBaseUrl}/schwab/authorize` : "";
+  const statusUrl = apiBaseUrl ? `${apiBaseUrl}/schwab/status` : "";
+
+  useEffect(() => {
+    async function checkConnectionStatus() {
+      if (!apiBaseUrl || !statusUrl) {
+        setConnectionStatus("Schwab API URL is not configured.");
+        setIsConnecting(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(statusUrl);
+        const payload = (await response.json()) as {
+          connected?: boolean;
+          reason?: string;
+          detail?: string;
+        };
+
+        if (response.ok && payload.connected === true) {
+          setConnectionStatus("Schwab connected.");
+        } else {
+          setConnectionStatus(
+            payload.detail
+              ? `Schwab connection problem: ${payload.detail}`
+              : "Schwab authorization is required.",
+          );
+        }
+      } catch {
+        setConnectionStatus("Unable to verify Schwab connection.");
+      } finally {
+        setIsConnecting(false);
+      }
+    }
+
+    void checkConnectionStatus();
+  }, [apiBaseUrl, statusUrl]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -178,6 +216,7 @@ function SchwabMarketInfo() {
       <a href="/">Back to landing page</a>
       <h1>Schwab Market Info</h1>
       <p>Connect Schwab and request Level One Equities market data by ticker symbol.</p>
+      <p>{connectionStatus}</p>
       {authorizeUrl ? (
         <p>
           <a href={authorizeUrl}>Connect Schwab OAuth</a>
@@ -186,12 +225,13 @@ function SchwabMarketInfo() {
       <form onSubmit={handleSubmit}>
         <input
           aria-label="Ticker symbol"
+          disabled={isConnecting}
           onChange={(event) => setSymbol(event.target.value)}
           placeholder="Ticker (e.g., AAPL)"
           type="text"
           value={symbol}
         />
-        <button disabled={isLoading} type="submit">
+        <button disabled={isLoading || isConnecting} type="submit">
           {isLoading ? "Loading..." : "Submit"}
         </button>
       </form>

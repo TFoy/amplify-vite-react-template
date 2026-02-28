@@ -53,6 +53,12 @@ schwabHttpApi.addRoutes({
 });
 
 schwabHttpApi.addRoutes({
+  path: "/schwab/status",
+  methods: [HttpMethod.GET],
+  integration: schwabIntegration,
+});
+
+schwabHttpApi.addRoutes({
   path: "/tasty/authorize",
   methods: [HttpMethod.GET],
   integration: tastyIntegration,
@@ -118,6 +124,7 @@ backend.addOutput({
       callback_url: callbackUrl,
       authorize_url: `${apiBaseUrl}schwab/authorize`,
       market_info_url: `${apiBaseUrl}schwab/market-info`,
+      status_url: `${apiBaseUrl}schwab/status`,
     },
     tasty: {
       api_url: apiBaseUrl,

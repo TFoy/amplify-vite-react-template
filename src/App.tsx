@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
+import AlphaVantageDaily from "./AlphaVantageDaily";
 import FinnhubQuote from "./FinnhubQuote";
 import LandingPage from "./LandingPage";
 import SchwabMarketInfo from "./SchwabMarketInfo";
@@ -110,6 +111,14 @@ function App() {
     return (
       <SiteFrame>
         <FinnhubQuote />
+      </SiteFrame>
+    );
+  }
+
+  if (pathname === "/alphavantage-daily") {
+    return (
+      <SiteFrame>
+        <AlphaVantageDaily />
       </SiteFrame>
     );
   }

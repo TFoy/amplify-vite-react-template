@@ -165,3 +165,17 @@ The Finnhub page uses the official quote endpoint and displays:
 - low price of the day
 - open price of the day
 - previous close price
+
+## Alpha Vantage setup
+
+Store your Alpha Vantage API key in SSM Parameter Store:
+
+```bash
+MSYS_NO_PATHCONV=1 aws ssm put-parameter --name "/amplify/alphavantage/credentials/api-key" --type "SecureString" --value "YOUR_ALPHAVANTAGE_API_KEY" --overwrite --region us-west-2
+```
+
+The Alpha Vantage page uses `TIME_SERIES_DAILY` and:
+
+- requires site sign-in
+- remembers the last ticker per signed-in user
+- graphs daily close prices for the returned compact series

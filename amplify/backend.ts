@@ -5,6 +5,7 @@ import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { auth } from "./auth/resource";
 import { data } from "./data/resource";
+import { alphaVantageDaily } from "./functions/alphavantage-daily/resource";
 import { finnhubQuote } from "./functions/finnhub-quote/resource";
 import { schwabMarketInfo } from "./functions/schwab-market-info/resource";
 import { tastyMarketInfo } from "./functions/tasty-market-info/resource";
@@ -13,6 +14,7 @@ import { tastyRestMarketInfo } from "./functions/tasty-rest-market-info/resource
 const backend = defineBackend({
   auth,
   data,
+  alphaVantageDaily,
   finnhubQuote,
   schwabMarketInfo,
   tastyMarketInfo,
@@ -44,6 +46,10 @@ const tastyRestIntegration = new HttpLambdaIntegration(
 const finnhubIntegration = new HttpLambdaIntegration(
   "FinnhubQuoteIntegration",
   backend.finnhubQuote.resources.lambda,
+);
+const alphaVantageIntegration = new HttpLambdaIntegration(
+  "AlphaVantageDailyIntegration",
+  backend.alphaVantageDaily.resources.lambda,
 );
 
 schwabHttpApi.addRoutes({
@@ -136,6 +142,18 @@ schwabHttpApi.addRoutes({
   integration: finnhubIntegration,
 });
 
+schwabHttpApi.addRoutes({
+  path: "/alphavantage/status",
+  methods: [HttpMethod.GET],
+  integration: alphaVantageIntegration,
+});
+
+schwabHttpApi.addRoutes({
+  path: "/alphavantage/daily",
+  methods: [HttpMethod.GET],
+  integration: alphaVantageIntegration,
+});
+
 const apiBaseUrl = schwabHttpApi.url ?? "";
 const callbackUrl = `${apiBaseUrl}schwab/callback`;
 const tastyCallbackUrl = `${apiBaseUrl}tasty/callback`;
@@ -188,6 +206,18 @@ backend.finnhubQuote.resources.lambda.addToRolePolicy(
     ],
   }),
 );
+backend.alphaVantageDaily.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: ["ssm:GetParameter"],
+    resources: [
+      schwabApiStack.formatArn({
+        service: "ssm",
+        resource: "parameter",
+        resourceName: "amplify/alphavantage/*",
+      }),
+    ],
+  }),
+);
 
 const userPoolId = backend.auth.resources.userPool.userPoolId;
 const userPoolClientId = backend.auth.resources.userPoolClient.userPoolClientId;
@@ -200,6 +230,8 @@ backend.tastyRestMarketInfo.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
 backend.tastyRestMarketInfo.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
 backend.finnhubQuote.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
 backend.finnhubQuote.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
+backend.alphaVantageDaily.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
+backend.alphaVantageDaily.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
 
 backend.addOutput({
   custom: {
@@ -229,6 +261,11 @@ backend.addOutput({
       api_url: apiBaseUrl,
       status_url: `${apiBaseUrl}finnhub/status`,
       quote_url: `${apiBaseUrl}finnhub/quote`,
+    },
+    alphavantage: {
+      api_url: apiBaseUrl,
+      status_url: `${apiBaseUrl}alphavantage/status`,
+      daily_url: `${apiBaseUrl}alphavantage/daily`,
     },
   },
 });

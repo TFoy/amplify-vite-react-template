@@ -6,6 +6,7 @@ function LandingPage() {
       <a href="/app">Open current todo page</a>
       <a href="/schwab-market-info">Open Schwab market info page</a>
       <a href="/tasty-chart">Open Tasty chart page</a>
+      <a href="/tasty-market-info">Open Tasty market info page</a>
     </main>
   );
 }

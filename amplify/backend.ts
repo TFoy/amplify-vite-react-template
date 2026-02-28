@@ -7,12 +7,14 @@ import { auth } from "./auth/resource";
 import { data } from "./data/resource";
 import { schwabMarketInfo } from "./functions/schwab-market-info/resource";
 import { tastyMarketInfo } from "./functions/tasty-market-info/resource";
+import { tastyRestMarketInfo } from "./functions/tasty-rest-market-info/resource";
 
 const backend = defineBackend({
   auth,
   data,
   schwabMarketInfo,
   tastyMarketInfo,
+  tastyRestMarketInfo,
 });
 
 const schwabApiStack = backend.createStack("schwab-api");
@@ -32,6 +34,10 @@ const schwabIntegration = new HttpLambdaIntegration(
 const tastyIntegration = new HttpLambdaIntegration(
   "TastyMarketInfoIntegration",
   backend.tastyMarketInfo.resources.lambda,
+);
+const tastyRestIntegration = new HttpLambdaIntegration(
+  "TastyRestMarketInfoIntegration",
+  backend.tastyRestMarketInfo.resources.lambda,
 );
 
 schwabHttpApi.addRoutes({
@@ -88,6 +94,18 @@ schwabHttpApi.addRoutes({
   integration: tastyIntegration,
 });
 
+schwabHttpApi.addRoutes({
+  path: "/tasty-rest/status",
+  methods: [HttpMethod.GET],
+  integration: tastyRestIntegration,
+});
+
+schwabHttpApi.addRoutes({
+  path: "/tasty-rest/market-info",
+  methods: [HttpMethod.GET],
+  integration: tastyRestIntegration,
+});
+
 const apiBaseUrl = schwabHttpApi.url ?? "";
 const callbackUrl = `${apiBaseUrl}schwab/callback`;
 const tastyCallbackUrl = `${apiBaseUrl}tasty/callback`;
@@ -116,6 +134,18 @@ backend.tastyMarketInfo.resources.lambda.addToRolePolicy(
     ],
   }),
 );
+backend.tastyRestMarketInfo.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: ["ssm:GetParameter"],
+    resources: [
+      schwabApiStack.formatArn({
+        service: "ssm",
+        resource: "parameter",
+        resourceName: "amplify/tasty/*",
+      }),
+    ],
+  }),
+);
 
 backend.addOutput({
   custom: {
@@ -133,6 +163,11 @@ backend.addOutput({
       market_info_url: `${apiBaseUrl}tasty/market-info`,
       status_url: `${apiBaseUrl}tasty/status`,
       debug_url: `${apiBaseUrl}tasty/debug`,
+    },
+    tasty_rest: {
+      api_url: apiBaseUrl,
+      status_url: `${apiBaseUrl}tasty-rest/status`,
+      market_info_url: `${apiBaseUrl}tasty-rest/market-info`,
     },
   },
 });

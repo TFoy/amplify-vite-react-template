@@ -6,6 +6,7 @@ import SchwabMarketInfo from "./SchwabMarketInfo";
 import TastyAuthPage from "./TastyAuthPage";
 import TastyAuthPopupPage from "./TastyAuthPopupPage";
 import TastyChart from "./TastyChart";
+import TastyMarketInfo from "./TastyMarketInfo";
 import TodoPage from "./TodoPage";
 
 function normalizePath(pathname: string) {
@@ -59,10 +60,18 @@ function App() {
     );
   }
 
-  if (pathname === "/tasty-chart" || pathname === "/tasty-market-info") {
+  if (pathname === "/tasty-chart") {
     return (
       <Authenticator>
         <TastyChart />
+      </Authenticator>
+    );
+  }
+
+  if (pathname === "/tasty-market-info") {
+    return (
+      <Authenticator>
+        <TastyMarketInfo />
       </Authenticator>
     );
   }

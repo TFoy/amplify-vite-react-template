@@ -83,6 +83,33 @@ After deploy/sandbox synth, register this exact callback URL in your TastyTrade 
 - `access_token`: short-lived token used for API calls (cached in `/amplify/tasty/oauth/tokens`)
 - `refresh_token`: returned during token exchange and reused automatically (cached in `/amplify/tasty/oauth/tokens`)
 
+## Tasty Market Info Setup
+
+This project also includes a separate `TastyMarketInfo` page (`/tasty-market-info`) backed by a separate Amplify function and REST routes:
+
+- `GET /tasty-rest/status`: checks whether the shared Tasty OAuth refresh token can mint a usable access token
+- `GET /tasty-rest/market-info?symbol=...`: calls the TastyTrade REST market-data endpoint
+
+What is reused from `TastyChart`:
+
+- the same Tasty OAuth app
+- the same popup login page (`/tasty-auth-popup`)
+- the same shared token cache in `/amplify/tasty/oauth/tokens`
+
+What is separate:
+
+- separate frontend page component
+- separate backend Lambda function
+- separate API routes under `/tasty-rest/*`
+- REST market-data call instead of the quote-streamer implementation used by `TastyChart`
+
+No additional secrets are required beyond the existing Tasty OAuth setup:
+
+- `/amplify/tasty/credentials/client-id`
+- `/amplify/tasty/credentials/client-secret`
+- `/amplify/tasty/credentials/session-secret`
+- `/amplify/tasty/oauth/tokens` is populated after OAuth login and reused by both Tasty pages
+
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.

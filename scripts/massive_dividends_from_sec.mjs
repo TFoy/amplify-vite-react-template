@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { writeFile } from "node:fs/promises";
 
 const SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json";
 const MASSIVE_DIVIDENDS_URL = "https://api.massive.com/stocks/v1/dividends";
@@ -9,9 +10,16 @@ const MASSIVE_LIMIT = 400;
 const YAHOO_QUOTE_FIELDS = [
   "symbol",
   "regularMarketPrice",
-  "regularMarketVolume",
+  "volume",
+  "averageDailyVolume3Month",
+  "averageDailyVolume10Day",
   "trailingPE",
   "forwardPE",
+  "trailingAnnualDividendRate",
+  "trailingAnnualDividendYield",
+  "dividendRate",
+  "dividendYield",
+  "beta",
 ];
 
 let yahooFinanceClient = null;
@@ -179,6 +187,29 @@ function formatComputedValue(value) {
   return String(value);
 }
 
+function toFiniteNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
 async function getMostRecentDividendsForBatch(tickers, apiKey) {
   const url = new URL(MASSIVE_DIVIDENDS_URL);
   url.searchParams.set("ticker.any_of", tickers.join(", "));
@@ -229,35 +260,155 @@ async function getYahooMetricsForBatch(tickers) {
   for (const quote of quoteArray) {
     const ticker = String(quote?.symbol ?? "").trim().toUpperCase();
     const regularMarketPrice = quote?.regularMarketPrice;
-    const regularMarketVolume = quote?.regularMarketVolume;
+    const volume =
+      quote?.volume ??
+      quote?.regularMarketVolume ??
+      quote?.averageDailyVolume3Month ??
+      quote?.averageDailyVolume10Day;
     const trailingPE = quote?.trailingPE;
     const forwardPE = quote?.forwardPE;
+    const trailingAnnualDividendRate = quote?.trailingAnnualDividendRate;
+    const trailingAnnualDividendYield = quote?.trailingAnnualDividendYield;
+    const dividendRate = quote?.dividendRate;
+    const dividendYield = quote?.dividendYield;
+    const beta = quote?.beta;
 
     if (!ticker || !tickers.includes(ticker)) {
       continue;
     }
 
     metricsByTicker.set(ticker, {
-      latestPrice:
-        typeof regularMarketPrice === "number" && Number.isFinite(regularMarketPrice)
-          ? regularMarketPrice
-          : null,
-      volume:
-        typeof regularMarketVolume === "number" && Number.isFinite(regularMarketVolume)
-          ? regularMarketVolume
-          : null,
-      trailingPE:
-        typeof trailingPE === "number" && Number.isFinite(trailingPE)
-          ? trailingPE
-          : null,
-      forwardPE:
-        typeof forwardPE === "number" && Number.isFinite(forwardPE)
-          ? forwardPE
-          : null,
+      latestPrice: toFiniteNumber(regularMarketPrice),
+      volume: toFiniteNumber(volume),
+      trailingPE: toFiniteNumber(trailingPE),
+      forwardPE: toFiniteNumber(forwardPE),
+      trailingAnnualDividendRate: toFiniteNumber(trailingAnnualDividendRate),
+      trailingAnnualDividendYield: toFiniteNumber(trailingAnnualDividendYield),
+      fiveYearAvgDividendYield: toFiniteNumber(dividendYield),
+      dividendRate: toFiniteNumber(dividendRate),
+      beta: toFiniteNumber(beta),
     });
   }
 
   return metricsByTicker;
+}
+
+function buildOutputRow(ticker, dividend, yahooMetrics) {
+  const metrics = yahooMetrics ?? {
+    latestPrice: null,
+    volume: null,
+    trailingPE: null,
+    forwardPE: null,
+    trailingAnnualDividendRate: null,
+    trailingAnnualDividendYield: null,
+    fiveYearAvgDividendYield: null,
+    dividendRate: null,
+    beta: null,
+  };
+
+  const latestPriceText =
+    typeof metrics.latestPrice === "number" ? String(metrics.latestPrice) : "NO PRICE";
+  const volumeText = typeof metrics.volume === "number" ? String(metrics.volume) : "NO VOLUME";
+  const trailingPEText =
+    typeof metrics.trailingPE === "number" ? String(metrics.trailingPE) : "NO PE";
+  const forwardPEText =
+    typeof metrics.forwardPE === "number" ? String(metrics.forwardPE) : "NO PE";
+  const trailingAnnualDividendRateText = formatComputedValue(
+    metrics.trailingAnnualDividendRate,
+  );
+  const trailingAnnualDividendYieldText = formatComputedValue(
+    metrics.trailingAnnualDividendYield,
+  );
+  const fiveYearAvgDividendYieldText = formatComputedValue(
+    metrics.fiveYearAvgDividendYield,
+  );
+  const dividendRateText = formatComputedValue(metrics.dividendRate);
+  const betaText = formatComputedValue(metrics.beta);
+
+  const cashAmountValue =
+    typeof dividend?.cash_amount === "number" && Number.isFinite(dividend.cash_amount)
+      ? dividend.cash_amount
+      : null;
+  const frequencyMultiplier = getFrequencyMultiplier(dividend?.frequency);
+  const annualDividend =
+    cashAmountValue !== null && frequencyMultiplier !== null
+      ? cashAmountValue * frequencyMultiplier
+      : null;
+  const dividendYield =
+    annualDividend !== null &&
+    typeof metrics.latestPrice === "number" &&
+    metrics.latestPrice > 0
+      ? annualDividend / metrics.latestPrice
+      : null;
+  const valueFactor =
+    dividendYield !== null &&
+    typeof metrics.forwardPE === "number" &&
+    metrics.forwardPE > 0
+      ? (dividendYield * 100) / metrics.forwardPE
+      : null;
+  const annualDividendText = formatComputedValue(annualDividend);
+  const dividendYieldText = formatComputedValue(dividendYield);
+  const valueFactorText = formatComputedValue(valueFactor);
+
+  if (!dividend) {
+    return `${ticker}\tNO DIVIDEND\tNO DIVIDEND\tNO DIVIDEND\tNO DIVIDEND\t${latestPriceText}\t${volumeText}\t${trailingPEText}\t${forwardPEText}\t${annualDividendText}\t${dividendYieldText}\t${valueFactorText}\t${trailingAnnualDividendRateText}\t${trailingAnnualDividendYieldText}\t${fiveYearAvgDividendYieldText}\t${dividendRateText}\t${betaText}`;
+  }
+
+  const cashAmount = dividend.cash_amount ?? "";
+  const frequency = dividend.frequency ?? "";
+  const distributionType = dividend.distribution_type ?? "";
+  const payDate = dividend.pay_date ?? "";
+  return `${ticker}\t${cashAmount}\t${frequency}\t${distributionType}\t${payDate}\t${latestPriceText}\t${volumeText}\t${trailingPEText}\t${forwardPEText}\t${annualDividendText}\t${dividendYieldText}\t${valueFactorText}\t${trailingAnnualDividendRateText}\t${trailingAnnualDividendYieldText}\t${fiveYearAvgDividendYieldText}\t${dividendRateText}\t${betaText}`;
+}
+
+async function runBatch(batchTickers, apiKey, throttleState) {
+  const now = Date.now();
+  const elapsed = now - throttleState.lastRequestStartedAt;
+  if (elapsed < MIN_DELAY_MS) {
+    await sleep(MIN_DELAY_MS - elapsed);
+  }
+
+  throttleState.lastRequestStartedAt = Date.now();
+
+  let mostRecentByTicker = new Map();
+  let yahooMetricsByTicker = new Map();
+  const errors = [];
+
+  try {
+    mostRecentByTicker = await getMostRecentDividendsForBatch(batchTickers, apiKey);
+  } catch (error) {
+    errors.push(
+      `massive: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  try {
+    yahooMetricsByTicker = await getYahooMetricsForBatch(batchTickers);
+  } catch (error) {
+    errors.push(`yahoo: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      error: errors.join(" | "),
+    };
+  }
+
+  return {
+    ok: true,
+    rows: batchTickers.map((ticker) =>
+      buildOutputRow(ticker, mostRecentByTicker.get(ticker), yahooMetricsByTicker.get(ticker)),
+    ),
+  };
+}
+
+function addFailureReason(failureReasons, tickers, reason) {
+  for (const ticker of tickers) {
+    const existing = failureReasons.get(ticker) ?? [];
+    existing.push(reason);
+    failureReasons.set(ticker, existing);
+  }
 }
 
 async function main() {
@@ -286,124 +437,105 @@ async function main() {
   const distinctTickerList = Array.from(new Set(tickers.map((item) => item.ticker)));
   const distinctTickerCount = distinctTickerList.length;
   const upperBound = Math.min(distinctTickerCount, startIndex + maxTickers);
-  let lastRequestStartedAt = 0;
+  const throttleState = { lastRequestStartedAt: 0 };
+  const failureReasons = new Map();
 
   console.error(
     `Loaded ${tickers.length} SEC rows (${distinctTickerCount} distinct tickers). Processing index ${startIndex}..${upperBound - 1} at max ${REQUESTS_PER_MINUTE}/min.`,
   );
   console.log(`Distinct tickers found: ${distinctTickerCount}`);
   console.log(
-    "ticker\tcash_amount\tfrequency\tdistribution_type\tpay_date\tlatest_price\tvolume\ttrailing_pe\tforward_pe\tannual_dividend\tdividend_yield\tvalue_factor",
+    "ticker\tcash_amount\tfrequency\tdistribution_type\tpay_date\tlatest_price\tvolume\ttrailing_pe\tforward_pe\tannual_dividend\tdividend_yield\tvalue_factor\ttrailing_annual_dividend_rate\ttrailing_annual_dividend_yield\tfive_year_avg_dividend_yield\tdividend_rate\tbeta",
   );
 
-  for (let i = startIndex; i < upperBound; i += TICKERS_PER_BATCH) {
-    const batchTickers = distinctTickerList.slice(i, Math.min(i + TICKERS_PER_BATCH, upperBound));
-    const batchStart = i;
-    const batchEnd = Math.min(i + batchTickers.length - 1, upperBound - 1);
-    const batchNumber = Math.floor((i - startIndex) / TICKERS_PER_BATCH) + 1;
-    const totalBatches = Math.ceil((upperBound - startIndex) / TICKERS_PER_BATCH);
+  let failedTickers = [];
+  const initialTickers = distinctTickerList.slice(startIndex, upperBound);
+  const initialBatches = chunkArray(initialTickers, TICKERS_PER_BATCH);
+
+  for (let batchIndex = 0; batchIndex < initialBatches.length; batchIndex += 1) {
+    const batchTickers = initialBatches[batchIndex];
+    const batchStart = startIndex + batchIndex * TICKERS_PER_BATCH;
+    const batchEnd = Math.min(batchStart + batchTickers.length - 1, upperBound - 1);
+    const batchNumber = batchIndex + 1;
+    const totalBatches = initialBatches.length;
     console.error(
       `Processing batch ${batchNumber}/${totalBatches} (index ${batchStart}-${batchEnd}, count ${batchTickers.length})...`,
     );
 
-    const now = Date.now();
-    const elapsed = now - lastRequestStartedAt;
-    if (elapsed < MIN_DELAY_MS) {
-      await sleep(MIN_DELAY_MS - elapsed);
-    }
-
-    lastRequestStartedAt = Date.now();
-
-    let mostRecentByTicker = new Map();
-    let yahooMetricsByTicker = new Map();
-
-    try {
-      mostRecentByTicker = await getMostRecentDividendsForBatch(batchTickers, apiKey);
-    } catch (error) {
-      console.error(
-        `[${i}-${Math.min(i + batchTickers.length - 1, upperBound - 1)}] massive batch failed (${batchTickers.join(",")}): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+    const result = await runBatch(batchTickers, apiKey, throttleState);
+    if (!result.ok) {
+      failedTickers.push(...batchTickers);
+      addFailureReason(
+        failureReasons,
+        batchTickers,
+        `initial batch ${batchNumber}/${totalBatches}: ${result.error}`,
       );
-    }
-
-    try {
-      yahooMetricsByTicker = await getYahooMetricsForBatch(batchTickers);
-    } catch (error) {
       console.error(
-        `[${i}-${Math.min(i + batchTickers.length - 1, upperBound - 1)}] yahoo batch failed (${batchTickers.join(",")}): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Batch ${batchNumber}/${totalBatches} failed and queued for retry: ${result.error}`,
       );
-    }
-
-    for (const ticker of batchTickers) {
-      const dividend = mostRecentByTicker.get(ticker);
-      const yahooMetrics = yahooMetricsByTicker.get(ticker) ?? {
-        latestPrice: null,
-        volume: null,
-        trailingPE: null,
-        forwardPE: null,
-      };
-      const latestPriceText =
-        typeof yahooMetrics.latestPrice === "number"
-          ? String(yahooMetrics.latestPrice)
-          : "NO PRICE";
-      const volumeText =
-        typeof yahooMetrics.volume === "number" ? String(yahooMetrics.volume) : "NO VOLUME";
-      const trailingPEText =
-        typeof yahooMetrics.trailingPE === "number"
-          ? String(yahooMetrics.trailingPE)
-          : "NO PE";
-      const forwardPEText =
-        typeof yahooMetrics.forwardPE === "number"
-          ? String(yahooMetrics.forwardPE)
-          : "NO PE";
-
-      const cashAmountValue =
-        typeof dividend?.cash_amount === "number" && Number.isFinite(dividend.cash_amount)
-          ? dividend.cash_amount
-          : null;
-      const frequencyMultiplier = getFrequencyMultiplier(dividend?.frequency);
-      const annualDividend =
-        cashAmountValue !== null && frequencyMultiplier !== null
-          ? cashAmountValue * frequencyMultiplier
-          : null;
-      const dividendYield =
-        annualDividend !== null &&
-        typeof yahooMetrics.latestPrice === "number" &&
-        yahooMetrics.latestPrice > 0
-          ? annualDividend / yahooMetrics.latestPrice
-          : null;
-      const valueFactor =
-        dividendYield !== null &&
-        typeof yahooMetrics.forwardPE === "number" &&
-        yahooMetrics.forwardPE > 0
-          ? (dividendYield * 100) / yahooMetrics.forwardPE
-          : null;
-      const annualDividendText = formatComputedValue(annualDividend);
-      const dividendYieldText = formatComputedValue(dividendYield);
-      const valueFactorText = formatComputedValue(valueFactor);
-
-      if (!dividend) {
-        console.log(
-          `${ticker}\tNO DIVIDEND\tNO DIVIDEND\tNO DIVIDEND\tNO DIVIDEND\t${latestPriceText}\t${volumeText}\t${trailingPEText}\t${forwardPEText}\t${annualDividendText}\t${dividendYieldText}\t${valueFactorText}`,
-        );
-        continue;
+    } else {
+      for (const row of result.rows) {
+        console.log(row);
       }
-
-      const cashAmount = dividend.cash_amount ?? "";
-      const frequency = dividend.frequency ?? "";
-      const distributionType = dividend.distribution_type ?? "";
-      const payDate = dividend.pay_date ?? "";
-      console.log(
-        `${ticker}\t${cashAmount}\t${frequency}\t${distributionType}\t${payDate}\t${latestPriceText}\t${volumeText}\t${trailingPEText}\t${forwardPEText}\t${annualDividendText}\t${dividendYieldText}\t${valueFactorText}`,
-      );
     }
 
     console.error(
       `Completed batch ${batchNumber}/${totalBatches} (index ${batchStart}-${batchEnd}).`,
     );
+  }
+
+  let retryBatchSize = Math.max(Math.floor(TICKERS_PER_BATCH / 2), 1);
+  while (failedTickers.length > 0) {
+    const uniqueFailedTickers = Array.from(new Set(failedTickers));
+    failedTickers = [];
+    const retryBatches = chunkArray(uniqueFailedTickers, retryBatchSize);
+
+    console.error(
+      `Retry pass with batch size ${retryBatchSize}. Remaining failed tickers: ${uniqueFailedTickers.length}.`,
+    );
+
+    for (let retryIndex = 0; retryIndex < retryBatches.length; retryIndex += 1) {
+      const batchTickers = retryBatches[retryIndex];
+      const retryLabel = `retry size=${retryBatchSize} batch ${retryIndex + 1}/${retryBatches.length}`;
+      console.error(
+        `Processing ${retryLabel} (${batchTickers.length} tickers)...`,
+      );
+
+      const result = await runBatch(batchTickers, apiKey, throttleState);
+      if (!result.ok) {
+        failedTickers.push(...batchTickers);
+        addFailureReason(
+          failureReasons,
+          batchTickers,
+          `${retryLabel}: ${result.error}`,
+        );
+        console.error(`${retryLabel} failed: ${result.error}`);
+      } else {
+        for (const row of result.rows) {
+          console.log(row);
+        }
+      }
+    }
+
+    if (retryBatchSize === 1) {
+      break;
+    }
+
+    retryBatchSize = Math.max(Math.floor(retryBatchSize / 2), 1);
+  }
+
+  const finalFailedTickers = Array.from(new Set(failedTickers));
+  if (finalFailedTickers.length > 0) {
+    const failLines = finalFailedTickers.map((ticker) => {
+      const reasons = failureReasons.get(ticker) ?? [];
+      return `${ticker}\t${reasons.join(" || ")}`;
+    });
+    await writeFile("fail.txt", `${failLines.join("\n")}\n`, "utf8");
+    console.error(
+      `Final failures after batch size 1: ${finalFailedTickers.length}. Wrote fail.txt.`,
+    );
+  } else {
+    console.error("No final failures after retries.");
   }
 
   console.error("Done.");

@@ -174,9 +174,23 @@ function MassiveDividends() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const apiBaseUrl = useMemo(() => {
+    const custom = (outputs as {
+      custom?: {
+        massive?: { api_url?: string };
+        alphavantage?: { api_url?: string };
+        finnhub?: { api_url?: string };
+        schwab?: { api_url?: string };
+        tasty?: { api_url?: string };
+      };
+    }).custom;
+
     const configUrl =
-      (outputs as { custom?: { massive?: { api_url?: string } } }).custom?.massive
-        ?.api_url ?? import.meta.env.VITE_MASSIVE_API_URL;
+      custom?.massive?.api_url ??
+      custom?.alphavantage?.api_url ??
+      custom?.finnhub?.api_url ??
+      custom?.schwab?.api_url ??
+      custom?.tasty?.api_url ??
+      import.meta.env.VITE_MASSIVE_API_URL;
 
     return configUrl?.replace(/\/$/, "") ?? "";
   }, []);

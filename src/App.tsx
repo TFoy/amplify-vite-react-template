@@ -4,6 +4,7 @@ import "@aws-amplify/ui-react/styles.css";
 import AlphaVantageDaily from "./AlphaVantageDaily";
 import FinnhubQuote from "./FinnhubQuote";
 import LandingPage from "./LandingPage";
+import MassiveDividends from "./MassiveDividends";
 import SchwabMarketInfo from "./SchwabMarketInfo";
 import TastyAuthPage from "./TastyAuthPage";
 import TastyAuthPopupPage from "./TastyAuthPopupPage";
@@ -119,6 +120,14 @@ function App() {
     return (
       <SiteFrame>
         <AlphaVantageDaily />
+      </SiteFrame>
+    );
+  }
+
+  if (pathname === "/massive-dividends") {
+    return (
+      <SiteFrame>
+        <MassiveDividends />
       </SiteFrame>
     );
   }

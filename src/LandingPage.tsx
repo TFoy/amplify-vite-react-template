@@ -38,6 +38,7 @@ function LandingPage() {
       <nav className="landing-links">
         <a href="/app">Todo</a>
         <a href="/alphavantage-daily">Alpha Vantage Daily</a>
+        <a href="/massive-dividends">Massive Historical Dividends</a>
         <a href="/finnhub-quote">Finnhub Quote</a>
         <a href="/schwab-market-info">Schwab Market Information</a>
         <a href="/tasty-market-info">Tasty Market Information</a>

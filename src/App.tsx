@@ -6,6 +6,7 @@ import FinnhubQuote from "./FinnhubQuote";
 import LandingPage from "./LandingPage";
 import MassiveDividends from "./MassiveDividends";
 import SchwabMarketInfo from "./SchwabMarketInfo";
+import StockAnalyzerEvaluationsPage from "./StockAnalyzerEvaluationsPage";
 import TastyAuthPage from "./TastyAuthPage";
 import TastyAuthPopupPage from "./TastyAuthPopupPage";
 import TastyChart from "./TastyChart";
@@ -128,6 +129,14 @@ function App() {
     return (
       <SiteFrame>
         <MassiveDividends />
+      </SiteFrame>
+    );
+  }
+
+  if (pathname === "/stock-analyzer-evaluations") {
+    return (
+      <SiteFrame>
+        <StockAnalyzerEvaluationsPage />
       </SiteFrame>
     );
   }

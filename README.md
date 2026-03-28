@@ -18,6 +18,9 @@ Ticker defaults are stored per signed-in user in the `UserPreference` model:
 - `schwab-market-info`
 - `tasty-market-info`
 - `tasty-chart`
+- `alphavantage-daily`
+- `finnhub-quote`
+- `massive-dividends`
 
 Each page restores the last ticker used by that user instead of starting blank.
 
@@ -179,3 +182,22 @@ The Alpha Vantage page uses `TIME_SERIES_DAILY` and:
 - requires site sign-in
 - remembers the last ticker per signed-in user
 - graphs daily close prices for the returned compact series
+
+## Massive dividends setup
+
+Store your Massive API key in SSM Parameter Store:
+
+```bash
+MSYS_NO_PATHCONV=1 aws ssm put-parameter --name "/amplify/massive/credentials/api-key" --type "SecureString" --value "YOUR_MASSIVE_API_KEY" --overwrite --region us-west-2
+```
+
+This project includes a `Massive Historical Dividends` page (`/massive-dividends`) backed by:
+
+- `GET /massive/status`
+- `GET /massive/dividends?symbol=...&limit=...`
+
+The page:
+
+- requires site sign-in
+- remembers the last ticker per signed-in user
+- charts historical dividend `cash_amount` by `ex_dividend_date`

@@ -40,6 +40,7 @@ function LandingPage() {
         <a href="/alphavantage-daily">Alpha Vantage Daily</a>
         <a href="/massive-dividends">Massive Historical Dividends</a>
         <a href="/finnhub-quote">Finnhub Quote</a>
+        <a href="/stock-analyzer-evaluations">Stock Analyzer Evaluations</a>
         <a href="/schwab-market-info">Schwab Market Information</a>
         <a href="/tasty-market-info">Tasty Market Information</a>
         <a href="/tasty-chart">Tasty Chart</a>

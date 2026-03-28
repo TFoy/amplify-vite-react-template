@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 
 const SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json";
 const MASSIVE_DIVIDENDS_URL = "https://api.massive.com/stocks/v1/dividends";
@@ -49,6 +50,40 @@ function parseArgs(argv) {
   }
 
   return args;
+}
+
+function getAwsRegion() {
+  return process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-west-2";
+}
+
+function getApiKeyFromSsmViaAwsCli(parameterName) {
+  try {
+    const output = execFileSync(
+      "aws",
+      [
+        "ssm",
+        "get-parameter",
+        "--name",
+        parameterName,
+        "--with-decryption",
+        "--query",
+        "Parameter.Value",
+        "--output",
+        "text",
+        "--region",
+        getAwsRegion(),
+      ],
+      {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    const value = output.trim();
+    return value || null;
+  } catch {
+    return null;
+  }
 }
 
 function sleep(ms) {
@@ -413,7 +448,15 @@ function addFailureReason(failureReasons, tickers, reason) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const apiKey = args["api-key"] || process.env.MASSIVE_API_KEY;
+  const ssmParameterName =
+    args["api-key-parameter-name"] ||
+    process.env.MASSIVE_API_KEY_PARAMETER_NAME ||
+    "/amplify/massive/credentials/api-key";
+  const apiKey =
+    args["api-key"] ||
+    process.env.MASSIVE_API_KEY ||
+    process.env.POLYGON_API_KEY ||
+    getApiKeyFromSsmViaAwsCli(ssmParameterName);
   const userAgent =
     args["sec-user-agent"] ||
     process.env.SEC_USER_AGENT ||
@@ -422,7 +465,9 @@ async function main() {
   const startIndex = args["start-index"] ? Number(args["start-index"]) : 0;
 
   if (!apiKey) {
-    throw new Error("Missing Massive API key. Use --api-key or MASSIVE_API_KEY.");
+    throw new Error(
+      `Missing Massive API key. Provide --api-key, MASSIVE_API_KEY, POLYGON_API_KEY, or make sure AWS CLI can read SSM parameter '${ssmParameterName}'.`,
+    );
   }
 
   if (!Number.isFinite(maxTickers) || maxTickers <= 0) {

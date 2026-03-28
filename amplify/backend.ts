@@ -7,7 +7,9 @@ import { auth } from "./auth/resource";
 import { data } from "./data/resource";
 import { alphaVantageDaily } from "./functions/alphavantage-daily/resource";
 import { finnhubQuote } from "./functions/finnhub-quote/resource";
+import { massiveDividends } from "./functions/massive-dividends/resource";
 import { schwabMarketInfo } from "./functions/schwab-market-info/resource";
+import { stockAnalyzerEvaluations } from "./functions/stock-analyzer-evaluations/resource";
 import { tastyMarketInfo } from "./functions/tasty-market-info/resource";
 import { tastyRestMarketInfo } from "./functions/tasty-rest-market-info/resource";
 
@@ -16,7 +18,9 @@ const backend = defineBackend({
   data,
   alphaVantageDaily,
   finnhubQuote,
+  massiveDividends,
   schwabMarketInfo,
+  stockAnalyzerEvaluations,
   tastyMarketInfo,
   tastyRestMarketInfo,
 });
@@ -50,6 +54,14 @@ const finnhubIntegration = new HttpLambdaIntegration(
 const alphaVantageIntegration = new HttpLambdaIntegration(
   "AlphaVantageDailyIntegration",
   backend.alphaVantageDaily.resources.lambda,
+);
+const massiveDividendsIntegration = new HttpLambdaIntegration(
+  "MassiveDividendsIntegration",
+  backend.massiveDividends.resources.lambda,
+);
+const stockAnalyzerEvaluationsIntegration = new HttpLambdaIntegration(
+  "StockAnalyzerEvaluationsIntegration",
+  backend.stockAnalyzerEvaluations.resources.lambda,
 );
 
 schwabHttpApi.addRoutes({
@@ -154,6 +166,24 @@ schwabHttpApi.addRoutes({
   integration: alphaVantageIntegration,
 });
 
+schwabHttpApi.addRoutes({
+  path: "/massive/status",
+  methods: [HttpMethod.GET],
+  integration: massiveDividendsIntegration,
+});
+
+schwabHttpApi.addRoutes({
+  path: "/massive/dividends",
+  methods: [HttpMethod.GET],
+  integration: massiveDividendsIntegration,
+});
+
+schwabHttpApi.addRoutes({
+  path: "/stock-analyzer/evaluations",
+  methods: [HttpMethod.GET],
+  integration: stockAnalyzerEvaluationsIntegration,
+});
+
 const apiBaseUrl = schwabHttpApi.url ?? "";
 const callbackUrl = `${apiBaseUrl}schwab/callback`;
 const tastyCallbackUrl = `${apiBaseUrl}tasty/callback`;
@@ -218,6 +248,35 @@ backend.alphaVantageDaily.resources.lambda.addToRolePolicy(
     ],
   }),
 );
+backend.massiveDividends.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: ["ssm:GetParameter"],
+    resources: [
+      schwabApiStack.formatArn({
+        service: "ssm",
+        resource: "parameter",
+        resourceName: "amplify/massive/*",
+      }),
+    ],
+  }),
+);
+backend.stockAnalyzerEvaluations.resources.lambda.addToRolePolicy(
+  new PolicyStatement({
+    actions: ["dynamodb:Query", "ssm:GetParameter"],
+    resources: [
+      schwabApiStack.formatArn({
+        service: "dynamodb",
+        resource: "table",
+        resourceName: "stock-analyzer-evaluations",
+      }),
+      schwabApiStack.formatArn({
+        service: "ssm",
+        resource: "parameter",
+        resourceName: "stock-analyzer/app-config",
+      }),
+    ],
+  }),
+);
 
 const userPoolId = backend.auth.resources.userPool.userPoolId;
 const userPoolClientId = backend.auth.resources.userPoolClient.userPoolClientId;
@@ -232,6 +291,10 @@ backend.finnhubQuote.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
 backend.finnhubQuote.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
 backend.alphaVantageDaily.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
 backend.alphaVantageDaily.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
+backend.massiveDividends.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
+backend.massiveDividends.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
+backend.stockAnalyzerEvaluations.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
+backend.stockAnalyzerEvaluations.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
 
 backend.addOutput({
   custom: {
@@ -266,6 +329,16 @@ backend.addOutput({
       api_url: apiBaseUrl,
       status_url: `${apiBaseUrl}alphavantage/status`,
       daily_url: `${apiBaseUrl}alphavantage/daily`,
+    },
+    massive: {
+      api_url: apiBaseUrl,
+      status_url: `${apiBaseUrl}massive/status`,
+      dividends_url: `${apiBaseUrl}massive/dividends`,
+    },
+    stock_analyzer: {
+      api_url: apiBaseUrl,
+      evaluations_url: `${apiBaseUrl}stock-analyzer/evaluations`,
+      symbols_url: `${apiBaseUrl}stock-analyzer/symbols`,
     },
   },
 });

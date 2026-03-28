@@ -184,6 +184,12 @@ schwabHttpApi.addRoutes({
   integration: stockAnalyzerEvaluationsIntegration,
 });
 
+schwabHttpApi.addRoutes({
+  path: "/stock-analyzer/symbols",
+  methods: [HttpMethod.GET],
+  integration: stockAnalyzerEvaluationsIntegration,
+});
+
 const apiBaseUrl = schwabHttpApi.url ?? "";
 const callbackUrl = `${apiBaseUrl}schwab/callback`;
 const tastyCallbackUrl = `${apiBaseUrl}tasty/callback`;

@@ -92,8 +92,13 @@ function asStringArray(value: unknown) {
 
 function parseSymbolsConfig(value: string) {
   try {
-    const parsed = JSON.parse(value) as { symbols?: unknown };
-    const symbols = asStringArray(parsed.symbols);
+    const parsed = JSON.parse(value) as {
+      symbols?: unknown;
+      universe?: {
+        symbols?: unknown;
+      };
+    };
+    const symbols = asStringArray(parsed.universe?.symbols ?? parsed.symbols);
     if (symbols.length > 0) {
       return symbols;
     }
@@ -108,7 +113,9 @@ function parseSymbolsConfig(value: string) {
     }
   }
 
-  throw new Error("Parameter store app config did not contain a usable 'symbols' list.");
+  throw new Error(
+    "Parameter store app config did not contain a usable 'universe.symbols' or 'symbols' list.",
+  );
 }
 
 async function getParameterValue(name: string) {

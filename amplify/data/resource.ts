@@ -17,6 +17,27 @@ const schema = a.schema({
       lastTicker: a.string(),
     })
     .authorization((allow) => [allow.owner()]),
+  OptionsTrackerRecord: a
+    .model({
+      ticker: a.string().required(),
+      account: a.string(),
+      strikePrice: a.float(),
+      optionCount: a.float(),
+      expirationDate: a.string(),
+      filled: a.boolean(),
+      premium: a.float(),
+      priceToClose: a.float(),
+      exercised: a.boolean(),
+      complete: a.boolean(),
+      notes: a.string(),
+    })
+    .authorization((allow) => [allow.owner()]),
+  OptionsTrackerSetting: a
+    .model({
+      pageKey: a.string().required(),
+      cashAvailable: a.float(),
+    })
+    .authorization((allow) => [allow.owner()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

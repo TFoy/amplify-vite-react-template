@@ -5,6 +5,7 @@ import AlphaVantageDaily from "./AlphaVantageDaily";
 import FinnhubQuote from "./FinnhubQuote";
 import LandingPage from "./LandingPage";
 import MassiveDividends from "./MassiveDividends";
+import OptionsTrackerPage from "./OptionsTrackerPage";
 import SchwabMarketInfo from "./SchwabMarketInfo";
 import StockAnalyzerEvaluationsPage from "./StockAnalyzerEvaluationsPage";
 import TastyAuthPage from "./TastyAuthPage";
@@ -129,6 +130,14 @@ function App() {
     return (
       <SiteFrame>
         <MassiveDividends />
+      </SiteFrame>
+    );
+  }
+
+  if (pathname === "/options-tracker") {
+    return (
+      <SiteFrame>
+        <OptionsTrackerPage />
       </SiteFrame>
     );
   }

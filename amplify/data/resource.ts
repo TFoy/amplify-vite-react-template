@@ -37,6 +37,7 @@ const schema = a.schema({
     .model({
       pageKey: a.string().required(),
       cashAvailable: a.float(),
+      columnWidths: a.string(),
     })
     .authorization((allow) => [allow.owner()]),
 });

@@ -293,6 +293,13 @@ main {
   color: #17324d;
 }
 
+.options-tracker-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
 .options-tracker-form {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -302,6 +309,8 @@ main {
 
 .options-tracker-form input,
 .options-tracker-form select,
+.options-tracker-filters input,
+.options-tracker-filters select,
 .options-tracker-table input {
   width: 100%;
   box-sizing: border-box;
@@ -382,9 +391,10 @@ main {
 }
 
 .options-tracker-table {
-  width: 100%;
+  width: max-content;
   border-collapse: collapse;
   min-width: 1180px;
+  table-layout: fixed;
 }
 
 .options-tracker-table th,
@@ -459,6 +469,32 @@ main {
   color: #17324d;
 }
 
+.options-tracker-header-label {
+  display: inline-block;
+  font-weight: 700;
+}
+
+.options-tracker-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.options-tracker-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 4px;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(23, 50, 77, 0.18);
+}
+
 .options-tracker-table tbody tr.is-complete {
   background: rgba(215, 228, 239, 0.34);
 }
@@ -497,6 +533,10 @@ main {
   .options-tracker-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .options-tracker-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -506,7 +546,8 @@ main {
 
   .options-tracker-hero,
   .options-tracker-summary-grid,
-  .options-tracker-form {
+  .options-tracker-form,
+  .options-tracker-filters {
     grid-template-columns: 1fr;
   }
 

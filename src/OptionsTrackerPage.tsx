@@ -7,6 +7,45 @@ const client = generateClient<Schema>();
 const SETTINGS_PAGE_KEY = "options-tracker";
 const RECORD_SAVE_DELAY_MS = 500;
 const CASH_SAVE_DELAY_MS = 500;
+const COLUMN_WIDTHS_STORAGE_SUFFIX = "column-widths";
+
+const COLUMN_KEYS = [
+  "ticker",
+  "account",
+  "type",
+  "strike",
+  "options",
+  "expiration",
+  "filled",
+  "premium",
+  "priceToClose",
+  "exercised",
+  "complete",
+  "setAside",
+  "notes",
+  "action",
+] as const;
+
+type ColumnKey = (typeof COLUMN_KEYS)[number];
+
+type ColumnWidths = Record<ColumnKey, number>;
+
+const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
+  ticker: 120,
+  account: 150,
+  type: 96,
+  strike: 110,
+  options: 110,
+  expiration: 140,
+  filled: 96,
+  premium: 110,
+  priceToClose: 130,
+  exercised: 110,
+  complete: 110,
+  setAside: 130,
+  notes: 320,
+  action: 110,
+};
 
 type OptionsRecordInput = {
   id: string;
@@ -46,6 +85,22 @@ type SortCriterion = {
   direction: "asc" | "desc";
 };
 
+type RecordFilters = {
+  ticker: string;
+  type: string;
+  account: string;
+  expirationFrom: string;
+  expirationTo: string;
+  exercised: string;
+  complete: string;
+};
+
+type ResizeState = {
+  column: ColumnKey;
+  startX: number;
+  startWidth: number;
+} | null;
+
 const EMPTY_DRAFT: RecordDraft = {
   ticker: "",
   account: "",
@@ -59,6 +114,16 @@ const EMPTY_DRAFT: RecordDraft = {
   exercised: false,
   complete: false,
   notes: "",
+};
+
+const EMPTY_FILTERS: RecordFilters = {
+  ticker: "",
+  type: "",
+  account: "",
+  expirationFrom: "",
+  expirationTo: "",
+  exercised: "",
+  complete: "",
 };
 
 function formatCurrency(value: number) {
@@ -96,6 +161,10 @@ function buildCashKey(userKey: string) {
   return `options-tracker-cash:${userKey}`;
 }
 
+function buildColumnWidthsKey(userKey: string) {
+  return `options-tracker:${userKey}:${COLUMN_WIDTHS_STORAGE_SUFFIX}`;
+}
+
 function createId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -110,6 +179,24 @@ function numberToInput(value: string | number | null | undefined, fallback = "")
   }
 
   return String(value);
+}
+
+function normalizeColumnWidths(value: unknown): ColumnWidths {
+  if (!value || typeof value !== "object") {
+    return { ...DEFAULT_COLUMN_WIDTHS };
+  }
+
+  const candidate = value as Partial<Record<ColumnKey, unknown>>;
+  const normalized = { ...DEFAULT_COLUMN_WIDTHS };
+
+  for (const key of COLUMN_KEYS) {
+    const width = candidate[key];
+    if (typeof width === "number" && Number.isFinite(width) && width >= 72) {
+      normalized[key] = width;
+    }
+  }
+
+  return normalized;
 }
 
 function mapRecordFromModel(
@@ -229,16 +316,21 @@ function OptionsTrackerPage() {
   const isSignedIn = Boolean(user);
   const storageKey = buildStorageKey(userKey);
   const cashKey = buildCashKey(userKey);
+  const columnWidthsKey = buildColumnWidthsKey(userKey);
 
   const [records, setRecords] = useState<OptionsRecordInput[]>([]);
   const [cashAvailableInput, setCashAvailableInput] = useState("");
   const [draft, setDraft] = useState<RecordDraft>(EMPTY_DRAFT);
+  const [filters, setFilters] = useState<RecordFilters>(EMPTY_FILTERS);
   const [settingId, setSettingId] = useState<string | null>(null);
+  const [columnWidths, setColumnWidths] = useState<ColumnWidths>(DEFAULT_COLUMN_WIDTHS);
   const [sortCriteria, setSortCriteria] = useState<SortCriterion[]>([
     { field: "expirationDate", direction: "asc" },
   ]);
+  const [resizeState, setResizeState] = useState<ResizeState>(null);
   const recordSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const cashSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const columnWidthsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isCreatingSetting = useRef(false);
 
   useEffect(() => {
@@ -249,6 +341,7 @@ function OptionsTrackerPage() {
     try {
       const savedRecords = window.localStorage.getItem(storageKey);
       const savedCash = window.localStorage.getItem(cashKey);
+      const savedColumnWidths = window.localStorage.getItem(columnWidthsKey);
 
       if (savedRecords) {
         const parsed = JSON.parse(savedRecords) as Array<Partial<OptionsRecordInput> & { id: string }>;
@@ -260,11 +353,17 @@ function OptionsTrackerPage() {
       }
 
       setCashAvailableInput(savedCash ?? "");
+      setColumnWidths(
+        savedColumnWidths
+          ? normalizeColumnWidths(JSON.parse(savedColumnWidths))
+          : { ...DEFAULT_COLUMN_WIDTHS },
+      );
     } catch {
       setRecords([]);
       setCashAvailableInput("");
+      setColumnWidths({ ...DEFAULT_COLUMN_WIDTHS });
     }
-  }, [cashKey, isSignedIn, storageKey]);
+  }, [cashKey, columnWidthsKey, isSignedIn, storageKey]);
 
   useEffect(() => {
     if (!isSignedIn) {
@@ -290,6 +389,7 @@ function OptionsTrackerPage() {
         setSettingId(setting?.id ?? null);
         isCreatingSetting.current = false;
         setCashAvailableInput(numberToInput(setting?.cashAvailable));
+        setColumnWidths(normalizeColumnWidths(setting?.columnWidths ? JSON.parse(setting.columnWidths) : null));
       },
     });
 
@@ -316,13 +416,56 @@ function OptionsTrackerPage() {
   }, [cashAvailableInput, cashKey, isSignedIn]);
 
   useEffect(() => {
+    if (isSignedIn) {
+      return;
+    }
+
+    window.localStorage.setItem(columnWidthsKey, JSON.stringify(columnWidths));
+  }, [columnWidths, columnWidthsKey, isSignedIn]);
+
+  useEffect(() => {
     return () => {
       Object.values(recordSaveTimers.current).forEach((timer) => clearTimeout(timer));
       if (cashSaveTimer.current) {
         clearTimeout(cashSaveTimer.current);
       }
+      if (columnWidthsSaveTimer.current) {
+        clearTimeout(columnWidthsSaveTimer.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!resizeState) {
+      return;
+    }
+
+    const activeResize = resizeState;
+
+    function onPointerMove(event: PointerEvent) {
+      const delta = event.clientX - activeResize.startX;
+      const nextWidth = Math.max(72, Math.round(activeResize.startWidth + delta));
+      setColumnWidths((current) => ({
+        ...current,
+        [activeResize.column]: nextWidth,
+      }));
+    }
+
+    function onPointerUp() {
+      if (isSignedIn) {
+        queueRemoteColumnWidthsSave(columnWidths);
+      }
+      setResizeState(null);
+    }
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [columnWidths, isSignedIn, resizeState]);
 
   const cashAvailable = useMemo(
     () => parseNumber(cashAvailableInput),
@@ -334,9 +477,56 @@ function OptionsTrackerPage() {
     [records],
   );
 
+  const filteredRecords = useMemo(() => {
+    const tickerFilter = normalizeTicker(filters.ticker);
+    const accountFilter = filters.account.trim().toLowerCase();
+
+    return records.filter((record) => {
+      if (tickerFilter && !record.ticker.includes(tickerFilter)) {
+        return false;
+      }
+
+      if (filters.type && record.type !== filters.type) {
+        return false;
+      }
+
+      if (accountFilter && !record.account.toLowerCase().includes(accountFilter)) {
+        return false;
+      }
+
+      if (filters.expirationFrom && record.expirationDate && record.expirationDate < filters.expirationFrom) {
+        return false;
+      }
+
+      if (filters.expirationTo && record.expirationDate && record.expirationDate > filters.expirationTo) {
+        return false;
+      }
+
+      if (filters.expirationFrom && !record.expirationDate) {
+        return false;
+      }
+
+      if (filters.complete) {
+        const expected = filters.complete === "yes";
+        if (record.complete !== expected) {
+          return false;
+        }
+      }
+
+      if (filters.exercised) {
+        const expected = filters.exercised === "yes";
+        if (record.exercised !== expected) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [filters, records]);
+
   const sortedRecords = useMemo(
-    () => sortRecords(records, sortCriteria),
-    [records, sortCriteria],
+    () => sortRecords(filteredRecords, sortCriteria),
+    [filteredRecords, sortCriteria],
   );
 
   const setAsideTotal = useMemo(
@@ -380,6 +570,13 @@ function OptionsTrackerPage() {
 
   function updateDraft<K extends keyof RecordDraft>(field: K, value: RecordDraft[K]) {
     setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateFilter<K extends keyof RecordFilters>(
+    field: K,
+    value: RecordFilters[K],
+  ) {
+    setFilters((current) => ({ ...current, [field]: value }));
   }
 
   function addRecord(event: React.FormEvent<HTMLFormElement>) {
@@ -440,6 +637,37 @@ function OptionsTrackerPage() {
       const payload = {
         pageKey: SETTINGS_PAGE_KEY,
         cashAvailable: parseNumber(value),
+        columnWidths: JSON.stringify(columnWidths),
+      };
+
+      if (settingId) {
+        void client.models.OptionsTrackerSetting.update({
+          id: settingId,
+          ...payload,
+        });
+        return;
+      }
+
+      if (isCreatingSetting.current) {
+        return;
+      }
+
+      isCreatingSetting.current = true;
+      void client.models.OptionsTrackerSetting.create(payload);
+    }, CASH_SAVE_DELAY_MS);
+  }
+
+  function queueRemoteColumnWidthsSave(nextColumnWidths: ColumnWidths) {
+    if (columnWidthsSaveTimer.current) {
+      clearTimeout(columnWidthsSaveTimer.current);
+    }
+
+    columnWidthsSaveTimer.current = setTimeout(() => {
+      columnWidthsSaveTimer.current = null;
+      const payload = {
+        pageKey: SETTINGS_PAGE_KEY,
+        cashAvailable: parseNumber(cashAvailableInput),
+        columnWidths: JSON.stringify(nextColumnWidths),
       };
 
       if (settingId) {
@@ -569,6 +797,47 @@ function OptionsTrackerPage() {
     if (isSignedIn) {
       queueRemoteCashSave(value);
     }
+  }
+
+  function beginColumnResize(
+    event: React.PointerEvent<HTMLSpanElement>,
+    column: ColumnKey,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    setResizeState({
+      column,
+      startX: event.clientX,
+      startWidth: columnWidths[column],
+    });
+  }
+
+  function renderResizableHeader(
+    column: ColumnKey,
+    label: string,
+    sortField?: SortField,
+  ) {
+    return (
+      <th className={column === "ticker" ? "options-tracker-sticky-column" : undefined}>
+        {sortField ? (
+          <button
+            className="options-tracker-sort-button"
+            onClick={() => handleSort(sortField)}
+            type="button"
+          >
+            {label}
+            {getSortIndicator(sortField)}
+          </button>
+        ) : (
+          <span className="options-tracker-header-label">{label}</span>
+        )}
+        <span
+          className="options-tracker-resize-handle"
+          onPointerDown={(event) => beginColumnResize(event, column)}
+          role="separator"
+        />
+      </th>
+    );
   }
 
   return (
@@ -755,64 +1024,94 @@ function OptionsTrackerPage() {
 
       <section className="options-tracker-panel">
         <h2>Positions</h2>
+        <div className="options-tracker-filters">
+          <input
+            onChange={(event) => updateFilter("ticker", event.target.value)}
+            placeholder="Filter ticker"
+            type="text"
+            value={filters.ticker}
+          />
+          <select
+            onChange={(event) => updateFilter("type", event.target.value)}
+            value={filters.type}
+          >
+            <option value="">All types</option>
+            <option value="PUT">PUT</option>
+            <option value="CALL">CALL</option>
+          </select>
+          <input
+            onChange={(event) => updateFilter("account", event.target.value)}
+            placeholder="Filter account"
+            type="text"
+            value={filters.account}
+          />
+          <input
+            onChange={(event) => updateFilter("expirationFrom", event.target.value)}
+            type="date"
+            value={filters.expirationFrom}
+          />
+          <input
+            onChange={(event) => updateFilter("expirationTo", event.target.value)}
+            type="date"
+            value={filters.expirationTo}
+          />
+          <select
+            onChange={(event) => updateFilter("exercised", event.target.value)}
+            value={filters.exercised}
+          >
+            <option value="">All exercised</option>
+            <option value="yes">Exercised</option>
+            <option value="no">Not exercised</option>
+          </select>
+          <select
+            onChange={(event) => updateFilter("complete", event.target.value)}
+            value={filters.complete}
+          >
+            <option value="">All complete states</option>
+            <option value="yes">Complete</option>
+            <option value="no">Not complete</option>
+          </select>
+          <button
+            onClick={() => setFilters(EMPTY_FILTERS)}
+            type="button"
+          >
+            Clear filters
+          </button>
+        </div>
         <div className="options-tracker-table-wrap">
           <table className="options-tracker-table">
+            <colgroup>
+              <col style={{ width: columnWidths.ticker }} />
+              <col style={{ width: columnWidths.account }} />
+              <col style={{ width: columnWidths.type }} />
+              <col style={{ width: columnWidths.strike }} />
+              <col style={{ width: columnWidths.options }} />
+              <col style={{ width: columnWidths.expiration }} />
+              <col style={{ width: columnWidths.filled }} />
+              <col style={{ width: columnWidths.premium }} />
+              <col style={{ width: columnWidths.priceToClose }} />
+              <col style={{ width: columnWidths.exercised }} />
+              <col style={{ width: columnWidths.complete }} />
+              <col style={{ width: columnWidths.setAside }} />
+              <col style={{ width: columnWidths.notes }} />
+              <col style={{ width: columnWidths.action }} />
+            </colgroup>
             <thead>
               <tr>
-                <th className="options-tracker-sticky-column">
-                  <button
-                    className="options-tracker-sort-button"
-                    onClick={() => handleSort("ticker")}
-                    type="button"
-                  >
-                    Ticker{getSortIndicator("ticker")}
-                  </button>
-                </th>
-                <th>Account</th>
-                <th>Type</th>
-                <th>Strike</th>
-                <th>Options</th>
-                <th>
-                  <button
-                    className="options-tracker-sort-button"
-                    onClick={() => handleSort("expirationDate")}
-                    type="button"
-                  >
-                    Expiration{getSortIndicator("expirationDate")}
-                  </button>
-                </th>
-                <th>
-                  <button
-                    className="options-tracker-sort-button"
-                    onClick={() => handleSort("filled")}
-                    type="button"
-                  >
-                    Filled{getSortIndicator("filled")}
-                  </button>
-                </th>
-                <th>Premium</th>
-                <th>Price to close</th>
-                <th>
-                  <button
-                    className="options-tracker-sort-button"
-                    onClick={() => handleSort("exercised")}
-                    type="button"
-                  >
-                    Exercised{getSortIndicator("exercised")}
-                  </button>
-                </th>
-                <th>
-                  <button
-                    className="options-tracker-sort-button"
-                    onClick={() => handleSort("complete")}
-                    type="button"
-                  >
-                    Complete{getSortIndicator("complete")}
-                  </button>
-                </th>
-                <th>Set aside</th>
-                <th>Notes</th>
-                <th>Action</th>
+                {renderResizableHeader("ticker", "Ticker", "ticker")}
+                {renderResizableHeader("account", "Account")}
+                {renderResizableHeader("type", "Type")}
+                {renderResizableHeader("strike", "Strike")}
+                {renderResizableHeader("options", "Options")}
+                {renderResizableHeader("expiration", "Expiration", "expirationDate")}
+                {renderResizableHeader("filled", "Filled", "filled")}
+                {renderResizableHeader("premium", "Premium")}
+                {renderResizableHeader("priceToClose", "Price to close")}
+                {renderResizableHeader("exercised", "Exercised", "exercised")}
+                {renderResizableHeader("complete", "Complete", "complete")}
+                {renderResizableHeader("setAside", "Set aside")}
+                {renderResizableHeader("notes", "Notes")}
+                {renderResizableHeader("action", "Action")}
               </tr>
             </thead>
             <tbody>
@@ -954,7 +1253,7 @@ function OptionsTrackerPage() {
               ) : (
                 <tr>
                   <td className="options-tracker-empty-row" colSpan={14}>
-                    No positions yet. Add your first ticker above.
+                    No positions match the current filters.
                   </td>
                 </tr>
               )}

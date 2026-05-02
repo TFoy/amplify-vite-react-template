@@ -24,6 +24,32 @@ Ticker defaults are stored per signed-in user in the `UserPreference` model:
 
 Each page restores the last ticker used by that user instead of starting blank.
 
+## Options Tracker Spreadsheet Import
+
+The repo includes a helper script to import rows from `positions.ods` into the
+owner-scoped `OptionsTrackerRecord` and `OptionsTrackerSetting` models through
+the AppSync GraphQL API using the target user's Cognito sign-in.
+
+Dry-run first:
+
+```powershell
+python scripts/import_options_tracker_from_ods.py --username "you@example.com" --dry-run
+```
+
+Import into DynamoDB and replace that user's existing options tracker data:
+
+```powershell
+python scripts/import_options_tracker_from_ods.py --username "you@example.com" --clear-existing
+```
+
+Notes:
+
+- `--username` should match the Cognito sign-in used by the app. In this project that is typically the sign-in email.
+- By default the script reads `Sheet1` from `c:\Users\thoma\OneDrive\Documents\positions.ods`.
+- By default it imports the total cash available from cell `P8`. Use `--skip-cash` to leave the cash setting alone.
+- The script prompts for the user's password unless you pass `--password` or `--password-env`.
+- If your Cognito app client does not allow direct password auth flows, pass an existing signed-in browser token with `--id-token` or `--id-token-env` instead.
+
 ## Features
 
 - **Authentication**: Setup with Amazon Cognito for secure user authentication.

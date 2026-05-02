@@ -352,6 +352,10 @@ main {
   font-weight: 700;
 }
 
+.options-tracker-pill-button {
+  border: none;
+}
+
 .options-tracker-pill-muted {
   background: #d7e4ef;
   color: #17324d;
@@ -383,6 +387,20 @@ main {
 .options-tracker-table th {
   color: #627384;
   font-size: 0.85rem;
+}
+
+.options-tracker-sort-button {
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+}
+
+.options-tracker-sort-button:hover {
+  border-color: transparent;
+  color: #17324d;
 }
 
 .options-tracker-table tbody tr.is-complete {

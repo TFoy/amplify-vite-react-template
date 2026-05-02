@@ -37,6 +37,13 @@ type RecordDraft = {
   notes: string;
 };
 
+type SortField = "ticker" | "expirationDate" | "filled" | "exercised" | "complete";
+
+type SortCriterion = {
+  field: SortField;
+  direction: "asc" | "desc";
+};
+
 const EMPTY_DRAFT: RecordDraft = {
   ticker: "",
   account: "",
@@ -142,11 +149,55 @@ function recordSetAside(record: Pick<OptionsRecordInput, "strikePrice" | "option
   return parseNumber(record.strikePrice) * parseNumber(record.optionCount);
 }
 
-function sortRecords(records: OptionsRecordInput[]) {
+function compareBooleans(left: boolean, right: boolean) {
+  if (left === right) {
+    return 0;
+  }
+
+  return left ? 1 : -1;
+}
+
+function compareStrings(left: string, right: string) {
+  return left.localeCompare(right);
+}
+
+function compareRecordsByField(
+  left: OptionsRecordInput,
+  right: OptionsRecordInput,
+  field: SortField,
+) {
+  if (field === "ticker") {
+    return compareStrings(left.ticker, right.ticker);
+  }
+
+  if (field === "expirationDate") {
+    return compareStrings(left.expirationDate || "9999-12-31", right.expirationDate || "9999-12-31");
+  }
+
+  if (field === "filled") {
+    return compareBooleans(left.filled, right.filled);
+  }
+
+  if (field === "exercised") {
+    return compareBooleans(left.exercised, right.exercised);
+  }
+
+  return compareBooleans(left.complete, right.complete);
+}
+
+function sortRecords(
+  records: OptionsRecordInput[],
+  sortCriteria: SortCriterion[] = [{ field: "expirationDate", direction: "asc" }],
+) {
   return [...records].sort((left, right) => {
-    const leftDate = left.expirationDate || "9999-12-31";
-    const rightDate = right.expirationDate || "9999-12-31";
-    return leftDate.localeCompare(rightDate) || left.ticker.localeCompare(right.ticker);
+    for (const criterion of sortCriteria) {
+      const comparison = compareRecordsByField(left, right, criterion.field);
+      if (comparison !== 0) {
+        return criterion.direction === "asc" ? comparison : -comparison;
+      }
+    }
+
+    return 0;
   });
 }
 
@@ -177,6 +228,9 @@ function OptionsTrackerPage() {
   const [cashAvailableInput, setCashAvailableInput] = useState("");
   const [draft, setDraft] = useState<RecordDraft>(EMPTY_DRAFT);
   const [settingId, setSettingId] = useState<string | null>(null);
+  const [sortCriteria, setSortCriteria] = useState<SortCriterion[]>([
+    { field: "expirationDate", direction: "asc" },
+  ]);
   const recordSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const cashSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isCreatingSetting = useRef(false);
@@ -193,7 +247,7 @@ function OptionsTrackerPage() {
       if (savedRecords) {
         const parsed = JSON.parse(savedRecords) as Array<Partial<OptionsRecordInput> & { id: string }>;
         setRecords(
-          Array.isArray(parsed) ? sortRecords(parsed.map(normalizeStoredRecord)) : [],
+          Array.isArray(parsed) ? parsed.map(normalizeStoredRecord) : [],
         );
       } else {
         setRecords([]);
@@ -214,7 +268,7 @@ function OptionsTrackerPage() {
 
     const recordSubscription = client.models.OptionsTrackerRecord.observeQuery().subscribe({
       next: ({ items }) => {
-        setRecords(sortRecords(items.map(mapRecordFromModel)));
+        setRecords(items.map(mapRecordFromModel));
       },
     });
 
@@ -272,6 +326,11 @@ function OptionsTrackerPage() {
   const activeRecords = useMemo(
     () => records.filter((record) => !record.complete),
     [records],
+  );
+
+  const sortedRecords = useMemo(
+    () => sortRecords(records, sortCriteria),
+    [records, sortCriteria],
   );
 
   const setAsideTotal = useMemo(
@@ -343,7 +402,7 @@ function OptionsTrackerPage() {
     if (isSignedIn) {
       void client.models.OptionsTrackerRecord.create(serializeRecordForSave(newRecord));
     } else {
-      setRecords((current) => sortRecords([...current, newRecord]));
+      setRecords((current) => [...current, newRecord]);
     }
 
     setDraft(EMPTY_DRAFT);
@@ -463,6 +522,34 @@ function OptionsTrackerPage() {
     }
 
     setRecords((current) => current.filter((record) => record.id !== id));
+  }
+
+  function fillDraftTicker(ticker: string) {
+    setDraft((current) => ({ ...current, ticker }));
+  }
+
+  function handleSort(field: SortField) {
+    setSortCriteria((current) => {
+      const existing = current.find((criterion) => criterion.field === field);
+      if (!existing) {
+        return [{ field, direction: "asc" }, ...current];
+      }
+
+      const nextDirection = existing.direction === "asc" ? "desc" : "asc";
+      return [
+        { field, direction: nextDirection },
+        ...current.filter((criterion) => criterion.field !== field),
+      ];
+    });
+  }
+
+  function getSortIndicator(field: SortField) {
+    const criterion = sortCriteria.find((entry) => entry.field === field);
+    if (!criterion) {
+      return "";
+    }
+
+    return criterion.direction === "asc" ? " ↑" : " ↓";
   }
 
   function handleCashAvailableChange(value: string) {
@@ -628,9 +715,14 @@ function OptionsTrackerPage() {
             <div className="options-tracker-pills">
               {tickersWithoutOpenRecords.length > 0 ? (
                 tickersWithoutOpenRecords.map((ticker) => (
-                  <span className="options-tracker-pill options-tracker-pill-muted" key={ticker}>
+                  <button
+                    className="options-tracker-pill options-tracker-pill-button options-tracker-pill-muted"
+                    key={ticker}
+                    onClick={() => fillDraftTicker(ticker)}
+                    type="button"
+                  >
                     {ticker}
-                  </span>
+                  </button>
                 ))
               ) : (
                 <span className="options-tracker-empty">
@@ -648,24 +740,64 @@ function OptionsTrackerPage() {
           <table className="options-tracker-table">
             <thead>
               <tr>
-                <th>Ticker</th>
+                <th>
+                  <button
+                    className="options-tracker-sort-button"
+                    onClick={() => handleSort("ticker")}
+                    type="button"
+                  >
+                    Ticker{getSortIndicator("ticker")}
+                  </button>
+                </th>
                 <th>Account</th>
                 <th>Strike</th>
                 <th>Options</th>
-                <th>Expiration</th>
-                <th>Filled</th>
+                <th>
+                  <button
+                    className="options-tracker-sort-button"
+                    onClick={() => handleSort("expirationDate")}
+                    type="button"
+                  >
+                    Expiration{getSortIndicator("expirationDate")}
+                  </button>
+                </th>
+                <th>
+                  <button
+                    className="options-tracker-sort-button"
+                    onClick={() => handleSort("filled")}
+                    type="button"
+                  >
+                    Filled{getSortIndicator("filled")}
+                  </button>
+                </th>
                 <th>Premium</th>
                 <th>Price to close</th>
-                <th>Exercised</th>
-                <th>Complete</th>
+                <th>
+                  <button
+                    className="options-tracker-sort-button"
+                    onClick={() => handleSort("exercised")}
+                    type="button"
+                  >
+                    Exercised{getSortIndicator("exercised")}
+                  </button>
+                </th>
+                <th>
+                  <button
+                    className="options-tracker-sort-button"
+                    onClick={() => handleSort("complete")}
+                    type="button"
+                  >
+                    Complete{getSortIndicator("complete")}
+                  </button>
+                </th>
                 <th>Set aside</th>
                 <th>Notes</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
-              {records.length > 0 ? (
-                records.map((record) => (
+              {sortedRecords.length > 0 ? (
+                sortedRecords.map((record) => (
                   <tr className={record.complete ? "is-complete" : ""} key={record.id}>
                     <td>
                       <input

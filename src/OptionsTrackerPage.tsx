@@ -839,6 +839,7 @@ function OptionsTrackerPage() {
                     </td>
                     <td>
                       <select
+                        className="options-tracker-type-select"
                         onChange={(event) =>
                           updateRecord(record.id, "type", event.target.value)
                         }
@@ -925,8 +926,9 @@ function OptionsTrackerPage() {
                       />
                     </td>
                     <td>{formatCurrency(recordSetAside(record))}</td>
-                    <td>
+                    <td className="options-tracker-notes-cell" title={record.notes}>
                       <input
+                        className="options-tracker-notes-field"
                         onChange={(event) =>
                           updateRecord(record.id, "notes", event.target.value)
                         }

@@ -301,7 +301,18 @@ main {
 }
 
 .options-tracker-form input,
+.options-tracker-form select,
 .options-tracker-table input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.72rem 0.85rem;
+  border: 1px solid rgba(23, 50, 77, 0.16);
+  border-radius: 10px;
+  background: white;
+  color: #17324d;
+}
+
+.options-tracker-table select {
   width: 100%;
   box-sizing: border-box;
   padding: 0.72rem 0.85rem;

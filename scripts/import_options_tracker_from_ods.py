@@ -109,6 +109,7 @@ mutation DeleteOptionsTrackerSetting($input: DeleteOptionsTrackerSettingInput!) 
 class ParsedRow:
     ticker: str
     account: str
+    option_type: str
     strike_price: Decimal
     option_count: Decimal
     expiration_date: str
@@ -280,17 +281,6 @@ def parse_date(value: str) -> str:
     raise ValueError(f"Unsupported date format: {value!r}")
 
 
-def compose_notes(option_type: str, notes: str) -> str:
-    cleaned_notes = notes.strip()
-    cleaned_type = option_type.strip().upper()
-
-    if cleaned_type and cleaned_notes:
-        return f"Type: {cleaned_type} | {cleaned_notes}"
-    if cleaned_type:
-        return f"Type: {cleaned_type}"
-    return cleaned_notes
-
-
 def parse_rows(rows: list[list[str]]) -> list[ParsedRow]:
     header_index = find_header_index(rows)
     parsed: list[ParsedRow] = []
@@ -324,6 +314,7 @@ def parse_rows(rows: list[list[str]]) -> list[ParsedRow]:
                 ParsedRow(
                     ticker=ticker,
                     account=account,
+                    option_type=option_type.strip().upper() or "PUT",
                     strike_price=parse_decimal(strike),
                     option_count=parse_decimal(option_count),
                     expiration_date=parse_date(expiration),
@@ -332,7 +323,7 @@ def parse_rows(rows: list[list[str]]) -> list[ParsedRow]:
                     price_to_close=parse_decimal(price_to_close),
                     exercised=parse_bool(exercised),
                     complete=parse_bool(complete),
-                    notes=compose_notes(option_type, notes),
+                    notes=notes,
                 )
             )
         except ValueError:
@@ -379,6 +370,7 @@ def preview_rows(rows: list[ParsedRow], cash_value: Decimal | None) -> None:
             {
                 "ticker": row.ticker,
                 "account": row.account,
+                "type": row.option_type,
                 "strikePrice": str(row.strike_price),
                 "optionCount": str(row.option_count),
                 "expirationDate": row.expiration_date,
@@ -627,6 +619,7 @@ def create_record(graphql_url: str, id_token: str, row: ParsedRow) -> None:
             "input": {
                 "ticker": row.ticker,
                 "account": row.account,
+                "type": row.option_type,
                 "strikePrice": float(row.strike_price),
                 "optionCount": float(row.option_count),
                 "expirationDate": row.expiration_date,

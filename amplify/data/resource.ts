@@ -21,6 +21,7 @@ const schema = a.schema({
     .model({
       ticker: a.string().required(),
       account: a.string(),
+      type: a.string(),
       strikePrice: a.float(),
       optionCount: a.float(),
       expirationDate: a.string(),

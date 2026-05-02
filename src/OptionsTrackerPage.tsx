@@ -12,6 +12,7 @@ type OptionsRecordInput = {
   id: string;
   ticker: string;
   account: string;
+  type: string;
   strikePrice: string;
   optionCount: string;
   expirationDate: string;
@@ -26,6 +27,7 @@ type OptionsRecordInput = {
 type RecordDraft = {
   ticker: string;
   account: string;
+  type: string;
   strikePrice: string;
   optionCount: string;
   expirationDate: string;
@@ -47,6 +49,7 @@ type SortCriterion = {
 const EMPTY_DRAFT: RecordDraft = {
   ticker: "",
   account: "",
+  type: "PUT",
   strikePrice: "",
   optionCount: "1",
   expirationDate: "",
@@ -116,6 +119,7 @@ function mapRecordFromModel(
     id: record.id,
     ticker: record.ticker ?? "",
     account: record.account ?? "",
+    type: record.type ?? "PUT",
     strikePrice: numberToInput(record.strikePrice),
     optionCount: numberToInput(record.optionCount, "1"),
     expirationDate: record.expirationDate ?? "",
@@ -133,6 +137,7 @@ function normalizeStoredRecord(record: Partial<OptionsRecordInput> & { id: strin
     id: record.id,
     ticker: normalizeTicker(record.ticker ?? ""),
     account: record.account ?? "",
+    type: record.type ?? "PUT",
     strikePrice: numberToInput(record.strikePrice),
     optionCount: numberToInput(record.optionCount, "1"),
     expirationDate: record.expirationDate ?? "",
@@ -146,7 +151,7 @@ function normalizeStoredRecord(record: Partial<OptionsRecordInput> & { id: strin
 }
 
 function recordSetAside(record: Pick<OptionsRecordInput, "strikePrice" | "optionCount">) {
-  return parseNumber(record.strikePrice) * parseNumber(record.optionCount);
+  return parseNumber(record.strikePrice) * parseNumber(record.optionCount) * 100;
 }
 
 function compareBooleans(left: boolean, right: boolean) {
@@ -205,6 +210,7 @@ function serializeRecordForSave(record: OptionsRecordInput) {
   return {
     ticker: normalizeTicker(record.ticker),
     account: record.account.trim(),
+    type: record.type,
     strikePrice: parseNumber(record.strikePrice),
     optionCount: parseNumber(record.optionCount),
     expirationDate: record.expirationDate,
@@ -388,6 +394,7 @@ function OptionsTrackerPage() {
       id: createId(),
       ticker,
       account: draft.account.trim(),
+      type: draft.type,
       strikePrice: draft.strikePrice.trim(),
       optionCount: draft.optionCount.trim(),
       expirationDate: draft.expirationDate,
@@ -471,7 +478,12 @@ function OptionsTrackerPage() {
           return nextRecord;
         }
 
-        if (field === "account" || field === "expirationDate" || field === "notes") {
+        if (
+          field === "account" ||
+          field === "type" ||
+          field === "expirationDate" ||
+          field === "notes"
+        ) {
           const nextRecord = { ...record, [field]: String(value) };
           if (isSignedIn) {
             queueRemoteRecordSave(nextRecord);
@@ -626,6 +638,13 @@ function OptionsTrackerPage() {
               type="text"
               value={draft.account}
             />
+            <select
+              onChange={(event) => updateDraft("type", event.target.value)}
+              value={draft.type}
+            >
+              <option value="PUT">PUT</option>
+              <option value="CALL">CALL</option>
+            </select>
             <input
               inputMode="decimal"
               onChange={(event) => updateDraft("strikePrice", event.target.value)}
@@ -750,6 +769,7 @@ function OptionsTrackerPage() {
                   </button>
                 </th>
                 <th>Account</th>
+                <th>Type</th>
                 <th>Strike</th>
                 <th>Options</th>
                 <th>
@@ -816,6 +836,17 @@ function OptionsTrackerPage() {
                         type="text"
                         value={record.account}
                       />
+                    </td>
+                    <td>
+                      <select
+                        onChange={(event) =>
+                          updateRecord(record.id, "type", event.target.value)
+                        }
+                        value={record.type}
+                      >
+                        <option value="PUT">PUT</option>
+                        <option value="CALL">CALL</option>
+                      </select>
                     </td>
                     <td>
                       <input
@@ -916,7 +947,7 @@ function OptionsTrackerPage() {
                 ))
               ) : (
                 <tr>
-                  <td className="options-tracker-empty-row" colSpan={13}>
+                  <td className="options-tracker-empty-row" colSpan={14}>
                     No positions yet. Add your first ticker above.
                   </td>
                 </tr>

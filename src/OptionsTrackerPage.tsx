@@ -759,7 +759,7 @@ function OptionsTrackerPage() {
           <table className="options-tracker-table">
             <thead>
               <tr>
-                <th>
+                <th className="options-tracker-sticky-column">
                   <button
                     className="options-tracker-sort-button"
                     onClick={() => handleSort("ticker")}
@@ -819,8 +819,9 @@ function OptionsTrackerPage() {
               {sortedRecords.length > 0 ? (
                 sortedRecords.map((record) => (
                   <tr className={record.complete ? "is-complete" : ""} key={record.id}>
-                    <td>
+                    <td className="options-tracker-sticky-column">
                       <input
+                        className="options-tracker-ticker-field"
                         onChange={(event) =>
                           updateRecord(record.id, "ticker", event.target.value)
                         }
@@ -830,6 +831,7 @@ function OptionsTrackerPage() {
                     </td>
                     <td>
                       <input
+                        className="options-tracker-account-field"
                         onChange={(event) =>
                           updateRecord(record.id, "account", event.target.value)
                         }
@@ -889,6 +891,7 @@ function OptionsTrackerPage() {
                     </td>
                     <td>
                       <input
+                        className="options-tracker-premium-field"
                         inputMode="decimal"
                         onChange={(event) =>
                           updateRecord(record.id, "premium", event.target.value)
@@ -899,6 +902,7 @@ function OptionsTrackerPage() {
                     </td>
                     <td>
                       <input
+                        className="options-tracker-price-to-close-field"
                         inputMode="decimal"
                         onChange={(event) =>
                           updateRecord(record.id, "priceToClose", event.target.value)

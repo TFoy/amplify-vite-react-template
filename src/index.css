@@ -393,6 +393,7 @@ main {
   padding: 10px 8px;
   text-align: left;
   vertical-align: middle;
+  background: rgba(255, 251, 246, 0.98);
 }
 
 .options-tracker-table th {
@@ -400,8 +401,36 @@ main {
   font-size: 0.85rem;
 }
 
+.options-tracker-sticky-column {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 92px;
+  box-shadow: 1px 0 0 rgba(23, 50, 77, 0.12);
+}
+
+.options-tracker-table thead .options-tracker-sticky-column {
+  z-index: 3;
+}
+
 .options-tracker-type-select {
   min-width: 88px;
+}
+
+.options-tracker-ticker-field {
+  min-width: 6.5ch;
+}
+
+.options-tracker-premium-field {
+  min-width: 7.5ch;
+}
+
+.options-tracker-price-to-close-field {
+  min-width: 7.5ch;
+}
+
+.options-tracker-account-field {
+  min-width: 10ch;
 }
 
 .options-tracker-notes-cell {
@@ -428,6 +457,10 @@ main {
 
 .options-tracker-table tbody tr.is-complete {
   background: rgba(215, 228, 239, 0.34);
+}
+
+.options-tracker-table tbody tr.is-complete .options-tracker-sticky-column {
+  background: rgba(215, 228, 239, 0.96);
 }
 
 .options-tracker-delete {

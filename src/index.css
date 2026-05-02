@@ -386,10 +386,6 @@ main {
   color: #718394;
 }
 
-.options-tracker-table-wrap {
-  overflow-x: auto;
-}
-
 .options-tracker-table {
   width: max-content;
   border-collapse: collapse;
@@ -406,10 +402,19 @@ main {
   background: rgba(255, 251, 246, 0.98);
 }
 
-.options-tracker-table th {
+.options-tracker-table-header-wrap {
   position: sticky;
   top: 12px;
-  z-index: 2;
+  z-index: 4;
+  overflow: hidden;
+  margin-bottom: -1px;
+}
+
+.options-tracker-table-wrap {
+  overflow-x: auto;
+}
+
+.options-tracker-table th {
   color: #627384;
   font-size: 0.85rem;
   background: rgba(255, 251, 246, 0.98);

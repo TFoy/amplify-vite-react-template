@@ -328,6 +328,8 @@ function OptionsTrackerPage() {
     { field: "expirationDate", direction: "asc" },
   ]);
   const [resizeState, setResizeState] = useState<ResizeState>(null);
+  const headerScrollRef = useRef<HTMLDivElement | null>(null);
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null);
   const recordSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const cashSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const columnWidthsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -840,6 +842,54 @@ function OptionsTrackerPage() {
     );
   }
 
+  function renderTableHeader() {
+    return (
+      <tr>
+        {renderResizableHeader("ticker", "Ticker", "ticker")}
+        {renderResizableHeader("account", "Account")}
+        {renderResizableHeader("type", "Type")}
+        {renderResizableHeader("strike", "Strike")}
+        {renderResizableHeader("options", "Options")}
+        {renderResizableHeader("expiration", "Expiration", "expirationDate")}
+        {renderResizableHeader("filled", "Filled", "filled")}
+        {renderResizableHeader("premium", "Premium")}
+        {renderResizableHeader("priceToClose", "Price to close")}
+        {renderResizableHeader("exercised", "Exercised", "exercised")}
+        {renderResizableHeader("complete", "Complete", "complete")}
+        {renderResizableHeader("setAside", "Set aside")}
+        {renderResizableHeader("notes", "Notes")}
+        {renderResizableHeader("action", "Action")}
+      </tr>
+    );
+  }
+
+  function renderColumnGroup() {
+    return (
+      <colgroup>
+        <col style={{ width: columnWidths.ticker }} />
+        <col style={{ width: columnWidths.account }} />
+        <col style={{ width: columnWidths.type }} />
+        <col style={{ width: columnWidths.strike }} />
+        <col style={{ width: columnWidths.options }} />
+        <col style={{ width: columnWidths.expiration }} />
+        <col style={{ width: columnWidths.filled }} />
+        <col style={{ width: columnWidths.premium }} />
+        <col style={{ width: columnWidths.priceToClose }} />
+        <col style={{ width: columnWidths.exercised }} />
+        <col style={{ width: columnWidths.complete }} />
+        <col style={{ width: columnWidths.setAside }} />
+        <col style={{ width: columnWidths.notes }} />
+        <col style={{ width: columnWidths.action }} />
+      </colgroup>
+    );
+  }
+
+  function handleBodyScroll(event: React.UIEvent<HTMLDivElement>) {
+    if (headerScrollRef.current) {
+      headerScrollRef.current.scrollLeft = event.currentTarget.scrollLeft;
+    }
+  }
+
   return (
     <main className="options-tracker-page">
       <a href="/">Back to landing page</a>
@@ -1078,42 +1128,21 @@ function OptionsTrackerPage() {
             Clear filters
           </button>
         </div>
-        <div className="options-tracker-table-wrap">
+        <div className="options-tracker-table-header-wrap" ref={headerScrollRef}>
           <table className="options-tracker-table">
-            <colgroup>
-              <col style={{ width: columnWidths.ticker }} />
-              <col style={{ width: columnWidths.account }} />
-              <col style={{ width: columnWidths.type }} />
-              <col style={{ width: columnWidths.strike }} />
-              <col style={{ width: columnWidths.options }} />
-              <col style={{ width: columnWidths.expiration }} />
-              <col style={{ width: columnWidths.filled }} />
-              <col style={{ width: columnWidths.premium }} />
-              <col style={{ width: columnWidths.priceToClose }} />
-              <col style={{ width: columnWidths.exercised }} />
-              <col style={{ width: columnWidths.complete }} />
-              <col style={{ width: columnWidths.setAside }} />
-              <col style={{ width: columnWidths.notes }} />
-              <col style={{ width: columnWidths.action }} />
-            </colgroup>
+            {renderColumnGroup()}
             <thead>
-              <tr>
-                {renderResizableHeader("ticker", "Ticker", "ticker")}
-                {renderResizableHeader("account", "Account")}
-                {renderResizableHeader("type", "Type")}
-                {renderResizableHeader("strike", "Strike")}
-                {renderResizableHeader("options", "Options")}
-                {renderResizableHeader("expiration", "Expiration", "expirationDate")}
-                {renderResizableHeader("filled", "Filled", "filled")}
-                {renderResizableHeader("premium", "Premium")}
-                {renderResizableHeader("priceToClose", "Price to close")}
-                {renderResizableHeader("exercised", "Exercised", "exercised")}
-                {renderResizableHeader("complete", "Complete", "complete")}
-                {renderResizableHeader("setAside", "Set aside")}
-                {renderResizableHeader("notes", "Notes")}
-                {renderResizableHeader("action", "Action")}
-              </tr>
+              {renderTableHeader()}
             </thead>
+          </table>
+        </div>
+        <div
+          className="options-tracker-table-wrap"
+          onScroll={handleBodyScroll}
+          ref={bodyScrollRef}
+        >
+          <table className="options-tracker-table">
+            {renderColumnGroup()}
             <tbody>
               {sortedRecords.length > 0 ? (
                 sortedRecords.map((record) => (

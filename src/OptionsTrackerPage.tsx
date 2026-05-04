@@ -199,6 +199,12 @@ function normalizeColumnWidths(value: unknown): ColumnWidths {
   return normalized;
 }
 
+function uniqueSortedValues(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right),
+  );
+}
+
 function mapRecordFromModel(
   record: Schema["OptionsTrackerRecord"]["type"],
 ): OptionsRecordInput {
@@ -558,6 +564,11 @@ function OptionsTrackerPage() {
 
     return [...tickers].sort((left, right) => left.localeCompare(right));
   }, [records]);
+
+  const usedAccounts = useMemo(
+    () => uniqueSortedValues(records.map((record) => record.account)),
+    [records],
+  );
 
   const tickersWithoutOpenRecords = useMemo(() => {
     const openTickers = new Set(
@@ -952,11 +963,17 @@ function OptionsTrackerPage() {
               value={draft.ticker}
             />
             <input
+              list="options-tracker-account-options"
               onChange={(event) => updateDraft("account", event.target.value)}
               placeholder="Account"
               type="text"
               value={draft.account}
             />
+            <datalist id="options-tracker-account-options">
+              {usedAccounts.map((account) => (
+                <option key={account} value={account} />
+              ))}
+            </datalist>
             <select
               onChange={(event) => updateDraft("type", event.target.value)}
               value={draft.type}
@@ -1090,11 +1107,17 @@ function OptionsTrackerPage() {
             <option value="CALL">CALL</option>
           </select>
           <input
+            list="options-tracker-filter-account-options"
             onChange={(event) => updateFilter("account", event.target.value)}
             placeholder="Filter account"
             type="text"
             value={filters.account}
           />
+          <datalist id="options-tracker-filter-account-options">
+            {usedAccounts.map((account) => (
+              <option key={account} value={account} />
+            ))}
+          </datalist>
           <input
             onChange={(event) => updateFilter("expirationFrom", event.target.value)}
             type="date"

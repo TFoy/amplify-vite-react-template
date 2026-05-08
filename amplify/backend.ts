@@ -12,6 +12,7 @@ import { schwabMarketInfo } from "./functions/schwab-market-info/resource";
 import { stockAnalyzerEvaluations } from "./functions/stock-analyzer-evaluations/resource";
 import { tastyMarketInfo } from "./functions/tasty-market-info/resource";
 import { tastyRestMarketInfo } from "./functions/tasty-rest-market-info/resource";
+import { yahooOptionsSkew } from "./functions/yahoo-options-skew/resource";
 
 const backend = defineBackend({
   auth,
@@ -23,6 +24,7 @@ const backend = defineBackend({
   stockAnalyzerEvaluations,
   tastyMarketInfo,
   tastyRestMarketInfo,
+  yahooOptionsSkew,
 });
 
 const schwabApiStack = backend.createStack("schwab-api");
@@ -62,6 +64,10 @@ const massiveDividendsIntegration = new HttpLambdaIntegration(
 const stockAnalyzerEvaluationsIntegration = new HttpLambdaIntegration(
   "StockAnalyzerEvaluationsIntegration",
   backend.stockAnalyzerEvaluations.resources.lambda,
+);
+const yahooOptionsSkewIntegration = new HttpLambdaIntegration(
+  "YahooOptionsSkewIntegration",
+  backend.yahooOptionsSkew.resources.lambda,
 );
 
 schwabHttpApi.addRoutes({
@@ -190,6 +196,18 @@ schwabHttpApi.addRoutes({
   integration: stockAnalyzerEvaluationsIntegration,
 });
 
+schwabHttpApi.addRoutes({
+  path: "/yahoo-options-skew/status",
+  methods: [HttpMethod.GET],
+  integration: yahooOptionsSkewIntegration,
+});
+
+schwabHttpApi.addRoutes({
+  path: "/yahoo-options-skew/skew",
+  methods: [HttpMethod.GET],
+  integration: yahooOptionsSkewIntegration,
+});
+
 const apiBaseUrl = schwabHttpApi.url ?? "";
 const callbackUrl = `${apiBaseUrl}schwab/callback`;
 const tastyCallbackUrl = `${apiBaseUrl}tasty/callback`;
@@ -301,6 +319,8 @@ backend.massiveDividends.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
 backend.massiveDividends.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
 backend.stockAnalyzerEvaluations.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
 backend.stockAnalyzerEvaluations.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
+backend.yahooOptionsSkew.addEnvironment("COGNITO_USER_POOL_ID", userPoolId);
+backend.yahooOptionsSkew.addEnvironment("COGNITO_USER_POOL_CLIENT_ID", userPoolClientId);
 
 backend.addOutput({
   custom: {
@@ -345,6 +365,11 @@ backend.addOutput({
       api_url: apiBaseUrl,
       evaluations_url: `${apiBaseUrl}stock-analyzer/evaluations`,
       symbols_url: `${apiBaseUrl}stock-analyzer/symbols`,
+    },
+    yahoo_options_skew: {
+      api_url: apiBaseUrl,
+      status_url: `${apiBaseUrl}yahoo-options-skew/status`,
+      skew_url: `${apiBaseUrl}yahoo-options-skew/skew`,
     },
   },
 });

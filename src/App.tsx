@@ -13,6 +13,7 @@ import TastyAuthPopupPage from "./TastyAuthPopupPage";
 import TastyChart from "./TastyChart";
 import TastyMarketInfo from "./TastyMarketInfo";
 import TodoPage from "./TodoPage";
+import YahooOptionsSkewPage from "./YahooOptionsSkewPage";
 
 function normalizePath(pathname: string) {
   if (!pathname || pathname === "/") {
@@ -138,6 +139,14 @@ function App() {
     return (
       <SiteFrame>
         <OptionsTrackerPage />
+      </SiteFrame>
+    );
+  }
+
+  if (pathname === "/yahoo-options-skew") {
+    return (
+      <SiteFrame>
+        <YahooOptionsSkewPage />
       </SiteFrame>
     );
   }

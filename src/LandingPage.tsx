@@ -38,6 +38,7 @@ function LandingPage() {
       <nav className="landing-links">
         <a href="/app">Todo</a>
         <a href="/options-tracker">Options Tracker</a>
+        <a href="/yahoo-options-skew">Yahoo Options Skew</a>
         <a href="/alphavantage-daily">Alpha Vantage Daily</a>
         <a href="/massive-dividends">Massive Historical Dividends</a>
         <a href="/finnhub-quote">Finnhub Quote</a>

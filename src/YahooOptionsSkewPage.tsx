@@ -1,47 +1,28 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Chart } from "chart.js/auto";
 import { useAuthenticator } from "@aws-amplify/ui-react";
 import outputs from "../amplify_outputs.json";
 import { getAuthHeaders } from "./auth";
 import { loadLastTicker, saveLastTicker } from "./userPreferences";
 
-type OptionLegSummary = {
-  contractSymbol: string;
-  strike: number;
-  impliedVolatility: number;
-  bid?: number;
-  ask?: number;
-  lastPrice: number;
-  volume?: number;
-  openInterest?: number;
-};
-
-type PairedSkew = {
-  value: number;
-  put: OptionLegSummary;
-  call: OptionLegSummary;
-};
-
-type AverageSkew = {
-  value: number;
-  putImpliedVolatility: number;
-  callImpliedVolatility: number;
-  putCount: number;
+type TermSkewPoint = {
+  expirationDate: string;
+  underlyingPrice: number;
   callCount: number;
+  putCount: number;
+  tenPercentOtmSkew: number | null;
+  averageOtmSkew: number | null;
+  atTheMoneySkew: number | null;
 };
 
-type YahooOptionsSkewResponse = {
+type YahooOptionsTermSkewResponse = {
   symbol: string;
   data: {
-    underlyingPrice: number;
-    expirationDate: string;
+    underlyingPrice: number | null;
     expirationDates: string[];
-    callCount: number;
-    putCount: number;
-    skew: {
-      tenPercentOtm: PairedSkew | null;
-      averageOtm: AverageSkew | null;
-      atTheMoney: PairedSkew | null;
-    };
+    requestedExpirations: number;
+    yahooDelayMs: number;
+    points: TermSkewPoint[];
   };
 };
 
@@ -58,7 +39,14 @@ type AmplifyCustomOutputs = {
   };
 };
 
-function formatCurrency(value: number) {
+const DEFAULT_MAX_EXPIRATIONS = 12;
+const DEFAULT_DELAY_MS = 800;
+
+function formatCurrency(value: number | null) {
+  if (value === null) {
+    return "--";
+  }
+
   return value.toLocaleString(undefined, {
     style: "currency",
     currency: "USD",
@@ -67,14 +55,11 @@ function formatCurrency(value: number) {
   });
 }
 
-function formatIv(value: number) {
-  return `${(value * 100).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}%`;
-}
+function formatSkew(value: number | null) {
+  if (value === null) {
+    return "--";
+  }
 
-function formatSkew(value: number) {
   const percentagePoints = value * 100;
   const sign = percentagePoints > 0 ? "+" : "";
   return `${sign}${percentagePoints.toLocaleString(undefined, {
@@ -83,7 +68,11 @@ function formatSkew(value: number) {
   })} pts`;
 }
 
-function getSkewTone(value: number) {
+function getSkewTone(value: number | null) {
+  if (value === null) {
+    return "No data";
+  }
+
   if (value > 0.02) {
     return "Put IV premium";
   }
@@ -95,29 +84,25 @@ function getSkewTone(value: number) {
   return "Balanced";
 }
 
-function renderLeg(label: string, leg: OptionLegSummary) {
-  return (
-    <div className="skew-leg">
-      <span>{label}</span>
-      <strong>{formatCurrency(leg.strike)}</strong>
-      <small>
-        IV {formatIv(leg.impliedVolatility)} · bid/ask{" "}
-        {leg.bid === undefined ? "--" : formatCurrency(leg.bid)} /{" "}
-        {leg.ask === undefined ? "--" : formatCurrency(leg.ask)}
-      </small>
-    </div>
-  );
+function getLatestPoint(points: TermSkewPoint[]) {
+  return points.length > 0 ? points[points.length - 1] : null;
+}
+
+function toChartValue(value: number | null) {
+  return value === null ? null : value * 100;
 }
 
 function YahooOptionsSkewPage() {
   const { user } = useAuthenticator((context) => [context.user]);
   const [symbol, setSymbol] = useState("");
-  const [expiration, setExpiration] = useState("");
+  const [maxExpirations, setMaxExpirations] = useState(DEFAULT_MAX_EXPIRATIONS);
   const [connectionStatus, setConnectionStatus] = useState("Checking Yahoo Finance access...");
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<YahooOptionsSkewResponse | null>(null);
+  const [result, setResult] = useState<YahooOptionsTermSkewResponse | null>(null);
+  const chartRef = useRef<Chart<"line"> | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const hasYahooOutput = useMemo(
     () => Boolean((outputs as AmplifyCustomOutputs).custom?.yahoo_options_skew?.api_url),
@@ -196,7 +181,104 @@ function YahooOptionsSkewPage() {
     }
 
     void checkStatus();
-  }, [apiBaseUrl, statusUrl, user]);
+  }, [apiBaseUrl, hasYahooOutput, statusUrl, user]);
+
+  useEffect(() => {
+    const context = canvasRef.current?.getContext("2d");
+    if (!context) {
+      return;
+    }
+
+    chartRef.current = new Chart(context, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: "10% OTM skew",
+            data: [],
+            borderColor: "#2f655f",
+            backgroundColor: "rgba(47, 101, 95, 0.14)",
+            tension: 0.28,
+            spanGaps: true,
+          },
+          {
+            label: "Average OTM skew",
+            data: [],
+            borderColor: "#8f5a20",
+            backgroundColor: "rgba(143, 90, 32, 0.14)",
+            borderDash: [6, 4],
+            tension: 0.28,
+            spanGaps: true,
+          },
+          {
+            label: "ATM skew",
+            data: [],
+            borderColor: "#314f86",
+            backgroundColor: "rgba(49, 79, 134, 0.14)",
+            borderDash: [2, 4],
+            tension: 0.28,
+            spanGaps: true,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          intersect: false,
+          mode: "index",
+        },
+        plugins: {
+          legend: {
+            position: "bottom",
+          },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                const value = typeof context.parsed.y === "number" ? context.parsed.y : null;
+                return `${context.dataset.label}: ${
+                  value === null ? "--" : `${value.toFixed(2)} pts`
+                }`;
+              },
+            },
+          },
+        },
+        scales: {
+          y: {
+            title: {
+              display: true,
+              text: "Put IV minus call IV, percentage points",
+            },
+            ticks: {
+              callback(value) {
+                return `${Number(value).toFixed(1)} pts`;
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return () => {
+      chartRef.current?.destroy();
+      chartRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) {
+      return;
+    }
+
+    const points = result?.data.points ?? [];
+    chart.data.labels = points.map((point) => point.expirationDate);
+    chart.data.datasets[0].data = points.map((point) => toChartValue(point.tenPercentOtmSkew));
+    chart.data.datasets[1].data = points.map((point) => toChartValue(point.averageOtmSkew));
+    chart.data.datasets[2].data = points.map((point) => toChartValue(point.atTheMoneySkew));
+    chart.update();
+  }, [result]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -223,15 +305,16 @@ function YahooOptionsSkewPage() {
     await saveLastTicker("yahoo-options-skew", trimmedSymbol);
 
     try {
-      const searchParams = new URLSearchParams({ symbol: trimmedSymbol });
-      if (expiration) {
-        searchParams.set("expiration", expiration);
-      }
+      const searchParams = new URLSearchParams({
+        symbol: trimmedSymbol,
+        maxExpirations: String(maxExpirations),
+        delayMs: String(DEFAULT_DELAY_MS),
+      });
 
-      const response = await fetch(`${apiBaseUrl}/yahoo-options-skew/skew?${searchParams}`, {
+      const response = await fetch(`${apiBaseUrl}/yahoo-options-skew/term-skew?${searchParams}`, {
         headers: await getAuthHeaders(),
       });
-      const payload = (await response.json()) as YahooOptionsSkewResponse & {
+      const payload = (await response.json()) as YahooOptionsTermSkewResponse & {
         error?: string;
       };
 
@@ -245,7 +328,6 @@ function YahooOptionsSkewPage() {
       }
 
       setResult(payload);
-      setExpiration(payload.data.expirationDate);
     } catch (submitError) {
       setError(
         submitError instanceof Error && submitError.message !== "Failed to fetch"
@@ -259,7 +341,8 @@ function YahooOptionsSkewPage() {
     }
   }
 
-  const primarySkew = result?.data.skew.tenPercentOtm ?? null;
+  const latestPoint = getLatestPoint(result?.data.points ?? []);
+  const primarySkew = latestPoint?.tenPercentOtmSkew ?? null;
 
   return (
     <main className="skew-page">
@@ -267,12 +350,12 @@ function YahooOptionsSkewPage() {
       <section className="skew-hero">
         <div>
           <p className="skew-kicker">Yahoo Finance Options</p>
-          <h1>Stock Skew</h1>
+          <h1>Skew Term Structure</h1>
           <p className="skew-intro">
-            Calculate put IV minus call IV from the option chain for a ticker symbol.
+            Chart put IV minus call IV across option expirations for a ticker symbol.
           </p>
         </div>
-        <form className="skew-form" onSubmit={handleSubmit}>
+        <form className="skew-form skew-form-term" onSubmit={handleSubmit}>
           <input
             aria-label="Ticker symbol"
             disabled={isCheckingStatus}
@@ -282,25 +365,42 @@ function YahooOptionsSkewPage() {
             value={symbol}
           />
           <select
-            aria-label="Expiration date"
-            disabled={isCheckingStatus || !result}
-            onChange={(event) => setExpiration(event.target.value)}
-            value={expiration}
+            aria-label="Maximum expirations"
+            disabled={isCheckingStatus || isLoading}
+            onChange={(event) => setMaxExpirations(Number(event.target.value))}
+            value={maxExpirations}
           >
-            <option value="">Nearest expiration</option>
-            {result?.data.expirationDates.map((expirationDate) => (
-              <option key={expirationDate} value={expirationDate}>
-                {expirationDate}
-              </option>
-            ))}
+            <option value={6}>6 expirations</option>
+            <option value={12}>12 expirations</option>
+            <option value={18}>18 expirations</option>
           </select>
           <button disabled={isLoading || isCheckingStatus} type="submit">
-            {isLoading ? "Calculating..." : "Calculate"}
+            {isLoading ? "Charting..." : "Chart Skew"}
           </button>
         </form>
       </section>
       <p className="skew-status">{connectionStatus}</p>
       {error ? <p className="skew-error">{error}</p> : null}
+      <section className="skew-panel">
+        <div className="skew-panel-header">
+          <div>
+            <h2>Skew vs. Expiration</h2>
+            <p>
+              Yahoo requests are made one at a time with an {DEFAULT_DELAY_MS} ms delay between
+              expiration calls.
+            </p>
+          </div>
+          {result ? (
+            <div className="skew-value">
+              <strong>{formatSkew(primarySkew)}</strong>
+              <span>{getSkewTone(primarySkew)}</span>
+            </div>
+          ) : null}
+        </div>
+        <div className="skew-chart-wrap">
+          <canvas ref={canvasRef} />
+        </div>
+      </section>
       {result ? (
         <>
           <section className="skew-summary-grid">
@@ -313,71 +413,44 @@ function YahooOptionsSkewPage() {
               <strong>{formatCurrency(result.data.underlyingPrice)}</strong>
             </article>
             <article>
-              <span>Expiration</span>
-              <strong>{result.data.expirationDate}</strong>
+              <span>Expirations</span>
+              <strong>
+                {result.data.points.length} / {result.data.expirationDates.length}
+              </strong>
             </article>
             <article>
-              <span>Contracts</span>
-              <strong>
-                {result.data.putCount} puts / {result.data.callCount} calls
-              </strong>
+              <span>Throttle</span>
+              <strong>{result.data.yahooDelayMs} ms</strong>
             </article>
           </section>
           <section className="skew-panel">
-            <div className="skew-panel-header">
-              <div>
-                <h2>10% OTM Skew</h2>
-                <p>Nearest 90% strike put IV minus nearest 110% strike call IV.</p>
-              </div>
-              {primarySkew ? (
-                <div className="skew-value">
-                  <strong>{formatSkew(primarySkew.value)}</strong>
-                  <span>{getSkewTone(primarySkew.value)}</span>
-                </div>
-              ) : null}
+            <h2>Expiration Detail</h2>
+            <div className="skew-table-wrap">
+              <table className="skew-table">
+                <thead>
+                  <tr>
+                    <th>Expiration</th>
+                    <th>10% OTM</th>
+                    <th>Average OTM</th>
+                    <th>ATM</th>
+                    <th>Contracts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.data.points.map((point) => (
+                    <tr key={point.expirationDate}>
+                      <td>{point.expirationDate}</td>
+                      <td>{formatSkew(point.tenPercentOtmSkew)}</td>
+                      <td>{formatSkew(point.averageOtmSkew)}</td>
+                      <td>{formatSkew(point.atTheMoneySkew)}</td>
+                      <td>
+                        {point.putCount} puts / {point.callCount} calls
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            {primarySkew ? (
-              <div className="skew-leg-grid">
-                {renderLeg("Put leg", primarySkew.put)}
-                {renderLeg("Call leg", primarySkew.call)}
-              </div>
-            ) : (
-              <p className="skew-empty">Not enough OTM option data for this expiration.</p>
-            )}
-          </section>
-          <section className="skew-detail-grid">
-            <article className="skew-panel">
-              <h2>Average OTM Skew</h2>
-              {result.data.skew.averageOtm ? (
-                <>
-                  <strong>{formatSkew(result.data.skew.averageOtm.value)}</strong>
-                  <p>
-                    Put IV {formatIv(result.data.skew.averageOtm.putImpliedVolatility)} from{" "}
-                    {result.data.skew.averageOtm.putCount} contracts.
-                  </p>
-                  <p>
-                    Call IV {formatIv(result.data.skew.averageOtm.callImpliedVolatility)} from{" "}
-                    {result.data.skew.averageOtm.callCount} contracts.
-                  </p>
-                </>
-              ) : (
-                <p className="skew-empty">Not enough OTM contracts to average.</p>
-              )}
-            </article>
-            <article className="skew-panel">
-              <h2>ATM Put-Call Skew</h2>
-              {result.data.skew.atTheMoney ? (
-                <>
-                  <strong>{formatSkew(result.data.skew.atTheMoney.value)}</strong>
-                  <div className="skew-leg-grid skew-leg-grid-compact">
-                    {renderLeg("Put leg", result.data.skew.atTheMoney.put)}
-                    {renderLeg("Call leg", result.data.skew.atTheMoney.call)}
-                  </div>
-                </>
-              ) : (
-                <p className="skew-empty">Not enough ATM option data.</p>
-              )}
-            </article>
           </section>
         </>
       ) : null}

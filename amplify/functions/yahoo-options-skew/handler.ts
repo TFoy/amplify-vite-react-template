@@ -19,6 +19,12 @@ type OptionLegSummary = {
   openInterest?: number;
 };
 
+const DEFAULT_MAX_EXPIRATIONS = 12;
+const HARD_MAX_EXPIRATIONS = 18;
+const DEFAULT_YAHOO_DELAY_MS = 800;
+const MIN_YAHOO_DELAY_MS = 500;
+const MAX_YAHOO_DELAY_MS = 3_000;
+
 const yahooFinance = new YahooFinance();
 
 const DEFAULT_HEADERS = {
@@ -45,6 +51,30 @@ function parseExpiration(value: string | undefined) {
   }
 
   return date;
+}
+
+function parseBoundedInteger(
+  value: string | undefined,
+  defaultValue: number,
+  minimumValue: number,
+  maximumValue: number,
+) {
+  if (!value) {
+    return defaultValue;
+  }
+
+  const parsedValue = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsedValue)) {
+    return defaultValue;
+  }
+
+  return Math.min(Math.max(parsedValue, minimumValue), maximumValue);
+}
+
+function sleep(delayMs: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
 }
 
 function getFiniteNumber(value: unknown) {
@@ -163,6 +193,20 @@ function calculateSkew(result: OptionsResult) {
   };
 }
 
+function calculateTermSkewPoint(result: OptionsResult) {
+  const skewData = calculateSkew(result);
+
+  return {
+    expirationDate: skewData.expirationDate,
+    underlyingPrice: skewData.underlyingPrice,
+    callCount: skewData.callCount,
+    putCount: skewData.putCount,
+    tenPercentOtmSkew: skewData.skew.tenPercentOtm?.value ?? null,
+    averageOtmSkew: skewData.skew.averageOtm?.value ?? null,
+    atTheMoneySkew: skewData.skew.atTheMoney?.value ?? null,
+  };
+}
+
 async function getOptionsSkew(symbol: string, expiration?: Date) {
   const options = await yahooFinance.options(
     symbol.toUpperCase(),
@@ -170,6 +214,29 @@ async function getOptionsSkew(symbol: string, expiration?: Date) {
   );
 
   return calculateSkew(options);
+}
+
+async function getOptionsTermSkew(symbol: string, maxExpirations: number, delayMs: number) {
+  const normalizedSymbol = symbol.toUpperCase();
+  const firstOptions = await yahooFinance.options(normalizedSymbol);
+  const expirationDates = firstOptions.expirationDates.slice(0, maxExpirations);
+  const points = [calculateTermSkewPoint(firstOptions)];
+
+  for (const expirationDate of expirationDates.slice(1)) {
+    await sleep(delayMs);
+    const options = await yahooFinance.options(normalizedSymbol, {
+      date: expirationDate,
+    });
+    points.push(calculateTermSkewPoint(options));
+  }
+
+  return {
+    underlyingPrice: getUnderlyingPrice(firstOptions),
+    expirationDates: firstOptions.expirationDates.map(toDateOnly),
+    requestedExpirations: expirationDates.length,
+    yahooDelayMs: delayMs,
+    points,
+  };
 }
 
 export const handler = async (event: ApiGatewayEvent) => {
@@ -197,6 +264,36 @@ export const handler = async (event: ApiGatewayEvent) => {
 
       const expiration = parseExpiration(query.expiration);
       const data = await getOptionsSkew(symbol, expiration);
+
+      return jsonResponse(200, {
+        symbol: symbol.toUpperCase(),
+        data,
+      });
+    }
+
+    if (path.endsWith("/yahoo-options-skew/term-skew")) {
+      await getAuthenticatedUserSub(event);
+
+      const symbol = query.symbol?.trim();
+      if (!symbol) {
+        return jsonResponse(400, {
+          error: "Query parameter 'symbol' is required.",
+        });
+      }
+
+      const maxExpirations = parseBoundedInteger(
+        query.maxExpirations,
+        DEFAULT_MAX_EXPIRATIONS,
+        1,
+        HARD_MAX_EXPIRATIONS,
+      );
+      const delayMs = parseBoundedInteger(
+        query.delayMs,
+        DEFAULT_YAHOO_DELAY_MS,
+        MIN_YAHOO_DELAY_MS,
+        MAX_YAHOO_DELAY_MS,
+      );
+      const data = await getOptionsTermSkew(symbol, maxExpirations, delayMs);
 
       return jsonResponse(200, {
         symbol: symbol.toUpperCase(),

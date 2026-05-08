@@ -233,6 +233,10 @@ main {
   gap: 10px;
 }
 
+.skew-form-term {
+  grid-template-columns: minmax(110px, 1fr) minmax(150px, 0.8fr) auto;
+}
+
 .skew-form input,
 .skew-form select {
   min-width: 0;
@@ -346,6 +350,34 @@ main {
 
 .skew-detail-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.skew-chart-wrap {
+  height: 420px;
+  margin-top: 18px;
+}
+
+.skew-table-wrap {
+  overflow-x: auto;
+  margin-top: 16px;
+}
+
+.skew-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+
+.skew-table th,
+.skew-table td {
+  border-bottom: 1px solid rgba(23, 50, 77, 0.12);
+  padding: 10px 8px;
+  text-align: left;
+}
+
+.skew-table th {
+  color: #637185;
+  font-size: 0.86rem;
 }
 
 .skew-empty {

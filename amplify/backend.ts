@@ -208,6 +208,12 @@ schwabHttpApi.addRoutes({
   integration: yahooOptionsSkewIntegration,
 });
 
+schwabHttpApi.addRoutes({
+  path: "/yahoo-options-skew/term-skew",
+  methods: [HttpMethod.GET],
+  integration: yahooOptionsSkewIntegration,
+});
+
 const apiBaseUrl = schwabHttpApi.url ?? "";
 const callbackUrl = `${apiBaseUrl}schwab/callback`;
 const tastyCallbackUrl = `${apiBaseUrl}tasty/callback`;
@@ -370,6 +376,7 @@ backend.addOutput({
       api_url: apiBaseUrl,
       status_url: `${apiBaseUrl}yahoo-options-skew/status`,
       skew_url: `${apiBaseUrl}yahoo-options-skew/skew`,
+      term_skew_url: `${apiBaseUrl}yahoo-options-skew/term-skew`,
     },
   },
 });

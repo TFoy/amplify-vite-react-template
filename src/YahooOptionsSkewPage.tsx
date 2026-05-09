@@ -41,6 +41,7 @@ type AmplifyCustomOutputs = {
 
 const DEFAULT_MAX_EXPIRATIONS = 12;
 const DEFAULT_DELAY_MS = 800;
+const MAX_EXPIRATIONS_OPTIONS = [6, 12, 18] as const;
 
 function formatCurrency(value: number | null) {
   if (value === null) {
@@ -92,10 +93,47 @@ function toChartValue(value: number | null) {
   return value === null ? null : value * 100;
 }
 
+function normalizeTicker(value: string | null) {
+  return value?.trim().toUpperCase().replace(/[^A-Z0-9.-]/g, "") ?? "";
+}
+
+function getUrlTicker() {
+  const searchParams = new URLSearchParams(window.location.search);
+  const queryTicker = normalizeTicker(searchParams.get("symbol") ?? searchParams.get("ticker"));
+  if (queryTicker) {
+    return queryTicker;
+  }
+
+  const pathMatch = window.location.pathname.match(/^\/yahoo-options-skew\/([^/]+)$/);
+  return normalizeTicker(pathMatch?.[1] ? decodeURIComponent(pathMatch[1]) : null);
+}
+
+function getUrlMaxExpirations() {
+  const searchParams = new URLSearchParams(window.location.search);
+  const rawValue = searchParams.get("maxExpirations") ?? searchParams.get("expirations");
+  const parsedValue = rawValue ? Number.parseInt(rawValue, 10) : DEFAULT_MAX_EXPIRATIONS;
+
+  return MAX_EXPIRATIONS_OPTIONS.includes(parsedValue as (typeof MAX_EXPIRATIONS_OPTIONS)[number])
+    ? parsedValue
+    : DEFAULT_MAX_EXPIRATIONS;
+}
+
+function updateSkewUrl(symbol: string, maxExpirations: number) {
+  const searchParams = new URLSearchParams();
+  if (maxExpirations !== DEFAULT_MAX_EXPIRATIONS) {
+    searchParams.set("maxExpirations", String(maxExpirations));
+  }
+
+  const query = searchParams.toString();
+  const nextUrl = `/yahoo-options-skew/${encodeURIComponent(symbol)}${query ? `?${query}` : ""}`;
+  window.history.replaceState(null, "", nextUrl);
+}
+
 function YahooOptionsSkewPage() {
   const { user } = useAuthenticator((context) => [context.user]);
-  const [symbol, setSymbol] = useState("");
-  const [maxExpirations, setMaxExpirations] = useState(DEFAULT_MAX_EXPIRATIONS);
+  const initialUrlTicker = useMemo(getUrlTicker, []);
+  const [symbol, setSymbol] = useState(initialUrlTicker);
+  const [maxExpirations, setMaxExpirations] = useState(getUrlMaxExpirations);
   const [connectionStatus, setConnectionStatus] = useState("Checking Yahoo Finance access...");
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -103,6 +141,7 @@ function YahooOptionsSkewPage() {
   const [result, setResult] = useState<YahooOptionsTermSkewResponse | null>(null);
   const chartRef = useRef<Chart<"line"> | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const hasLoadedUrlTickerRef = useRef(false);
 
   const hasYahooOutput = useMemo(
     () => Boolean((outputs as AmplifyCustomOutputs).custom?.yahoo_options_skew?.api_url),
@@ -136,11 +175,11 @@ function YahooOptionsSkewPage() {
     }
 
     void loadLastTicker("yahoo-options-skew").then((savedTicker) => {
-      if (savedTicker) {
+      if (!initialUrlTicker && savedTicker) {
         setSymbol(savedTicker);
       }
     });
-  }, [user]);
+  }, [initialUrlTicker, user]);
 
   useEffect(() => {
     async function checkStatus() {
@@ -280,10 +319,7 @@ function YahooOptionsSkewPage() {
     chart.update();
   }, [result]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const trimmedSymbol = symbol.trim().toUpperCase();
+  async function loadTermSkew(trimmedSymbol: string, expirationCount: number) {
     if (!trimmedSymbol) {
       setError("Please enter a ticker symbol.");
       return;
@@ -303,11 +339,12 @@ function YahooOptionsSkewPage() {
     setResult(null);
     setIsLoading(true);
     await saveLastTicker("yahoo-options-skew", trimmedSymbol);
+    updateSkewUrl(trimmedSymbol, expirationCount);
 
     try {
       const searchParams = new URLSearchParams({
         symbol: trimmedSymbol,
-        maxExpirations: String(maxExpirations),
+        maxExpirations: String(expirationCount),
         delayMs: String(DEFAULT_DELAY_MS),
       });
 
@@ -341,6 +378,20 @@ function YahooOptionsSkewPage() {
     }
   }
 
+  useEffect(() => {
+    if (hasLoadedUrlTickerRef.current || !initialUrlTicker || !user || !apiBaseUrl) {
+      return;
+    }
+
+    hasLoadedUrlTickerRef.current = true;
+    void loadTermSkew(initialUrlTicker, maxExpirations);
+  }, [apiBaseUrl, initialUrlTicker, maxExpirations, user]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await loadTermSkew(normalizeTicker(symbol), maxExpirations);
+  }
+
   const latestPoint = getLatestPoint(result?.data.points ?? []);
   const primarySkew = latestPoint?.tenPercentOtmSkew ?? null;
 
@@ -370,9 +421,11 @@ function YahooOptionsSkewPage() {
             onChange={(event) => setMaxExpirations(Number(event.target.value))}
             value={maxExpirations}
           >
-            <option value={6}>6 expirations</option>
-            <option value={12}>12 expirations</option>
-            <option value={18}>18 expirations</option>
+            {MAX_EXPIRATIONS_OPTIONS.map((expirationCount) => (
+              <option key={expirationCount} value={expirationCount}>
+                {expirationCount} expirations
+              </option>
+            ))}
           </select>
           <button disabled={isLoading || isCheckingStatus} type="submit">
             {isLoading ? "Charting..." : "Chart Skew"}

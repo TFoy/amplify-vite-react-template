@@ -143,7 +143,7 @@ function App() {
     );
   }
 
-  if (pathname === "/yahoo-options-skew") {
+  if (pathname === "/yahoo-options-skew" || pathname.startsWith("/yahoo-options-skew/")) {
     return (
       <SiteFrame>
         <YahooOptionsSkewPage />

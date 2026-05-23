@@ -781,6 +781,10 @@ function OptionsTrackerPage() {
     setDraft((current) => ({ ...current, ticker }));
   }
 
+  function filterPositionsByTicker(ticker: string) {
+    updateFilter("ticker", normalizeTicker(ticker));
+  }
+
   function handleSort(field: SortField) {
     setSortCriteria((current) => {
       const existing = current.find((criterion) => criterion.field === field);
@@ -1056,9 +1060,14 @@ function OptionsTrackerPage() {
             <div className="options-tracker-pills">
               {usedTickers.length > 0 ? (
                 usedTickers.map((ticker) => (
-                  <span className="options-tracker-pill" key={ticker}>
+                  <button
+                    className="options-tracker-pill options-tracker-pill-button"
+                    key={ticker}
+                    onClick={() => filterPositionsByTicker(ticker)}
+                    type="button"
+                  >
                     {ticker}
-                  </span>
+                  </button>
                 ))
               ) : (
                 <span className="options-tracker-empty">No tickers yet.</span>

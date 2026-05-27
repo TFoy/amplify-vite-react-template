@@ -652,6 +652,10 @@ main {
   min-width: 7.5ch;
 }
 
+.options-tracker-entered-field {
+  min-width: 10.5ch;
+}
+
 .options-tracker-account-field {
   min-width: 10ch;
 }

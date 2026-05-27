@@ -24,6 +24,7 @@ const COLUMN_KEYS = [
   "setAside",
   "notes",
   "action",
+  "entered",
 ] as const;
 
 type ColumnKey = (typeof COLUMN_KEYS)[number];
@@ -45,6 +46,7 @@ const DEFAULT_COLUMN_WIDTHS: ColumnWidths = {
   setAside: 130,
   notes: 320,
   action: 110,
+  entered: 140,
 };
 
 type OptionsRecordInput = {
@@ -61,6 +63,7 @@ type OptionsRecordInput = {
   exercised: boolean;
   complete: boolean;
   notes: string;
+  entered: string;
 };
 
 type RecordDraft = {
@@ -76,6 +79,7 @@ type RecordDraft = {
   exercised: boolean;
   complete: boolean;
   notes: string;
+  entered: string;
 };
 
 type SortField = "ticker" | "expirationDate" | "filled" | "exercised" | "complete";
@@ -100,21 +104,6 @@ type ResizeState = {
   startX: number;
   startWidth: number;
 } | null;
-
-const EMPTY_DRAFT: RecordDraft = {
-  ticker: "",
-  account: "",
-  type: "PUT",
-  strikePrice: "",
-  optionCount: "1",
-  expirationDate: "",
-  filled: false,
-  premium: "",
-  priceToClose: "",
-  exercised: false,
-  complete: false,
-  notes: "",
-};
 
 const EMPTY_FILTERS: RecordFilters = {
   ticker: "",
@@ -151,6 +140,33 @@ function parseNumber(value: string | number | null | undefined) {
 
 function normalizeTicker(value: string) {
   return value.trim().toUpperCase();
+}
+
+function getTodayDateInputValue() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function createEmptyDraft(): RecordDraft {
+  return {
+    ticker: "",
+    account: "",
+    type: "PUT",
+    strikePrice: "",
+    optionCount: "1",
+    expirationDate: "",
+    filled: false,
+    premium: "",
+    priceToClose: "",
+    exercised: false,
+    complete: false,
+    notes: "",
+    entered: getTodayDateInputValue(),
+  };
 }
 
 function buildStorageKey(userKey: string) {
@@ -222,6 +238,7 @@ function mapRecordFromModel(
     exercised: record.exercised ?? false,
     complete: record.complete ?? false,
     notes: record.notes ?? "",
+    entered: record.entered ?? "",
   };
 }
 
@@ -240,6 +257,7 @@ function normalizeStoredRecord(record: Partial<OptionsRecordInput> & { id: strin
     exercised: Boolean(record.exercised),
     complete: Boolean(record.complete),
     notes: record.notes ?? "",
+    entered: record.entered ?? "",
   };
 }
 
@@ -313,6 +331,7 @@ function serializeRecordForSave(record: OptionsRecordInput) {
     exercised: record.exercised,
     complete: record.complete,
     notes: record.notes.trim(),
+    entered: record.entered,
   };
 }
 
@@ -326,7 +345,7 @@ function OptionsTrackerPage() {
 
   const [records, setRecords] = useState<OptionsRecordInput[]>([]);
   const [cashAvailableInput, setCashAvailableInput] = useState("");
-  const [draft, setDraft] = useState<RecordDraft>(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<RecordDraft>(createEmptyDraft);
   const [filters, setFilters] = useState<RecordFilters>(EMPTY_FILTERS);
   const [settingId, setSettingId] = useState<string | null>(null);
   const [columnWidths, setColumnWidths] = useState<ColumnWidths>(DEFAULT_COLUMN_WIDTHS);
@@ -614,6 +633,7 @@ function OptionsTrackerPage() {
       exercised: draft.exercised,
       complete: draft.complete,
       notes: draft.notes.trim(),
+      entered: draft.entered,
     };
 
     if (isSignedIn) {
@@ -622,7 +642,7 @@ function OptionsTrackerPage() {
       setRecords((current) => [...current, newRecord]);
     }
 
-    setDraft(EMPTY_DRAFT);
+    setDraft(createEmptyDraft());
   }
 
   function queueRemoteRecordSave(record: OptionsRecordInput) {
@@ -723,6 +743,7 @@ function OptionsTrackerPage() {
           field === "account" ||
           field === "type" ||
           field === "expirationDate" ||
+          field === "entered" ||
           field === "notes"
         ) {
           const nextRecord = { ...record, [field]: String(value) };
@@ -872,6 +893,7 @@ function OptionsTrackerPage() {
         {renderResizableHeader("setAside", "Set aside")}
         {renderResizableHeader("notes", "Notes")}
         {renderResizableHeader("action", "Action")}
+        {renderResizableHeader("entered", "Entered")}
       </tr>
     );
   }
@@ -893,6 +915,7 @@ function OptionsTrackerPage() {
         <col style={{ width: columnWidths.setAside }} />
         <col style={{ width: columnWidths.notes }} />
         <col style={{ width: columnWidths.action }} />
+        <col style={{ width: columnWidths.entered }} />
       </colgroup>
     );
   }
@@ -1022,6 +1045,12 @@ function OptionsTrackerPage() {
               placeholder="Notes"
               type="text"
               value={draft.notes}
+            />
+            <input
+              aria-label="Entered"
+              onChange={(event) => updateDraft("entered", event.target.value)}
+              type="date"
+              value={draft.entered}
             />
             <label>
               <input
@@ -1307,11 +1336,21 @@ function OptionsTrackerPage() {
                         Delete
                       </button>
                     </td>
+                    <td>
+                      <input
+                        className="options-tracker-entered-field"
+                        onChange={(event) =>
+                          updateRecord(record.id, "entered", event.target.value)
+                        }
+                        type="date"
+                        value={record.entered}
+                      />
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td className="options-tracker-empty-row" colSpan={14}>
+                  <td className="options-tracker-empty-row" colSpan={15}>
                     No positions match the current filters.
                   </td>
                 </tr>

@@ -31,6 +31,7 @@ const schema = a.schema({
       exercised: a.boolean(),
       complete: a.boolean(),
       notes: a.string(),
+      entered: a.string(),
     })
     .authorization((allow) => [allow.owner()]),
   OptionsTrackerSetting: a

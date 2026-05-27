@@ -777,12 +777,10 @@ function OptionsTrackerPage() {
     setRecords((current) => current.filter((record) => record.id !== id));
   }
 
-  function fillDraftTicker(ticker: string) {
-    setDraft((current) => ({ ...current, ticker }));
-  }
-
-  function filterPositionsByTicker(ticker: string) {
-    updateFilter("ticker", normalizeTicker(ticker));
+  function selectTicker(ticker: string) {
+    const normalizedTicker = normalizeTicker(ticker);
+    setDraft((current) => ({ ...current, ticker: normalizedTicker }));
+    updateFilter("ticker", normalizedTicker);
   }
 
   function handleSort(field: SortField) {
@@ -1063,7 +1061,7 @@ function OptionsTrackerPage() {
                   <button
                     className="options-tracker-pill options-tracker-pill-button"
                     key={ticker}
-                    onClick={() => filterPositionsByTicker(ticker)}
+                    onClick={() => selectTicker(ticker)}
                     type="button"
                   >
                     {ticker}
@@ -1082,7 +1080,7 @@ function OptionsTrackerPage() {
                   <button
                     className="options-tracker-pill options-tracker-pill-button options-tracker-pill-muted"
                     key={ticker}
-                    onClick={() => fillDraftTicker(ticker)}
+                    onClick={() => selectTicker(ticker)}
                     type="button"
                   >
                     {ticker}

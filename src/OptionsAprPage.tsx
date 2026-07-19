@@ -54,6 +54,7 @@ type ChartPoint = {
   expirationDate: string;
   optionType: "call" | "put";
   strike: number;
+  midpoint: number | null;
   probabilityExpiresWorthless: number | null;
 };
 
@@ -101,6 +102,33 @@ function formatPercent(value: number | null) {
 
 function isFriday(expiration: string) {
   return new Date(`${expiration}T00:00:00Z`).getUTCDay() === 5;
+}
+
+function getThirdFridayOfNextMonth() {
+  const today = new Date();
+  const firstOfNextMonth = new Date(
+    Date.UTC(today.getFullYear(), today.getMonth() + 1, 1),
+  );
+  const daysUntilFriday = (5 - firstOfNextMonth.getUTCDay() + 7) % 7;
+  return new Date(
+    Date.UTC(
+      firstOfNextMonth.getUTCFullYear(),
+      firstOfNextMonth.getUTCMonth(),
+      1 + daysUntilFriday + 14,
+    ),
+  )
+    .toISOString()
+    .slice(0, 10);
+}
+
+function getDefaultExpirations(expirationDates: string[]) {
+  const fridayExpirations = expirationDates.filter(isFriday);
+  const firstFourFridays = fridayExpirations.slice(0, 4);
+  const thirdFridayOfNextMonth = getThirdFridayOfNextMonth();
+  const fridaysThroughNextMonthlyExpiration = fridayExpirations.filter(
+    (expiration) => expiration <= thirdFridayOfNextMonth,
+  );
+  return [...new Set([...firstFourFridays, ...fridaysThroughNextMonthlyExpiration])].sort();
 }
 
 function OptionsAprPage() {
@@ -230,6 +258,7 @@ function OptionsAprPage() {
                 const point = context.raw as ChartPoint;
                 return [
                   `Strike: ${formatCurrency(point.strike)}`,
+                  `Midpoint premium: ${formatCurrency(point.midpoint)}`,
                   `Simple APR: ${point.y.toFixed(2)}%`,
                   `Expires without exercise: ${formatPercent(point.probabilityExpiresWorthless)}`,
                 ];
@@ -406,6 +435,7 @@ function OptionsAprPage() {
             expirationDate: chain.expirationDate,
             optionType,
             strike: option.strike,
+            midpoint: option.midpoint,
             probabilityExpiresWorthless: option.probabilityExpiresWorthless,
           }));
         return {
@@ -466,6 +496,7 @@ function OptionsAprPage() {
       setCompanyName(result.companyName);
       setUnderlyingPrice(result.underlyingPrice);
       setExpirationDates(result.expirationDates);
+      setSelectedExpirations(getDefaultExpirations(result.expirationDates));
       await saveLastTicker("options-apr", result.symbol);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to retrieve expirations.");

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Chart } from "chart.js/auto";
+import type { Plugin } from "chart.js";
 import { useAuthenticator } from "@aws-amplify/ui-react";
 import outputs from "../amplify_outputs.json";
 import { getAuthHeaders } from "./auth";
@@ -89,6 +90,10 @@ function formatPercent(value: number | null) {
   return value === null ? "--" : `${(value * 100).toFixed(2)}%`;
 }
 
+function isFriday(expiration: string) {
+  return new Date(`${expiration}T00:00:00Z`).getUTCDay() === 5;
+}
+
 function OptionsAprPage() {
   const { user } = useAuthenticator((context) => [context.user]);
   const [symbol, setSymbol] = useState("");
@@ -97,13 +102,13 @@ function OptionsAprPage() {
   const [expirationDates, setExpirationDates] = useState<string[]>([]);
   const [selectedExpirations, setSelectedExpirations] = useState<string[]>([]);
   const [chains, setChains] = useState<ChainResult[]>([]);
-  const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
   const [isLoadingExpirations, setIsLoadingExpirations] = useState(false);
   const [isLoadingChains, setIsLoadingChains] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartRef = useRef<Chart<"line"> | null>(null);
+  const underlyingPriceRef = useRef<number | null>(null);
 
   const apiBaseUrl = useMemo(() => {
     const custom = (outputs as AmplifyCustomOutputs).custom;
@@ -127,8 +132,45 @@ function OptionsAprPage() {
       return;
     }
 
+    const currentPricePlugin: Plugin<"line"> = {
+      id: "current-stock-price",
+      afterDatasetsDraw(chart) {
+        const price = underlyingPriceRef.current;
+        const xScale = chart.scales.x;
+        if (price === null || !xScale || price < xScale.min || price > xScale.max) {
+          return;
+        }
+
+        const x = xScale.getPixelForValue(price);
+        const { ctx, chartArea } = chart;
+        const label = `Current: ${formatCurrency(price)}`;
+        ctx.save();
+        ctx.strokeStyle = "#172033";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, chartArea.top);
+        ctx.lineTo(x, chartArea.bottom);
+        ctx.stroke();
+
+        ctx.font = "700 12px sans-serif";
+        const labelWidth = ctx.measureText(label).width + 12;
+        const labelX = Math.min(
+          Math.max(x - labelWidth / 2, chartArea.left),
+          chartArea.right - labelWidth,
+        );
+        ctx.fillStyle = "rgba(23, 32, 51, 0.9)";
+        ctx.fillRect(labelX, chartArea.top + 4, labelWidth, 22);
+        ctx.fillStyle = "white";
+        ctx.textBaseline = "middle";
+        ctx.fillText(label, labelX + 6, chartArea.top + 15);
+        ctx.restore();
+      },
+    };
+
     chartRef.current = new Chart(context, {
       type: "line",
+      plugins: [currentPricePlugin],
       data: { datasets: [] },
       options: {
         responsive: true,
@@ -176,6 +218,11 @@ function OptionsAprPage() {
   }, []);
 
   useEffect(() => {
+    underlyingPriceRef.current = underlyingPrice;
+    chartRef.current?.draw();
+  }, [underlyingPrice]);
+
+  useEffect(() => {
     const chart = chartRef.current;
     if (!chart) {
       return;
@@ -205,20 +252,11 @@ function OptionsAprPage() {
           pointHoverRadius: 5,
           borderWidth: 2,
           tension: 0.08,
-          hidden: hiddenSeries.includes(`${chain.expirationDate}:${optionType}`),
         };
       });
     });
     chart.update();
-  }, [chains, hiddenSeries]);
-
-  function toggleSeries(seriesKey: string) {
-    setHiddenSeries((current) =>
-      current.includes(seriesKey)
-        ? current.filter((value) => value !== seriesKey)
-        : [...current, seriesKey],
-    );
-  }
+  }, [chains]);
 
   async function fetchJson<T>(url: string): Promise<T> {
     const response = await fetch(url, { headers: await getAuthHeaders() });
@@ -248,7 +286,6 @@ function OptionsAprPage() {
     setIsLoadingExpirations(true);
     setError(null);
     setChains([]);
-    setHiddenSeries([]);
     setExpirationDates([]);
     setSelectedExpirations([]);
     try {
@@ -353,13 +390,17 @@ function OptionsAprPage() {
           </div>
           <div className="options-apr-expirations">
             {expirationDates.map((expiration) => (
-              <label key={expiration}>
+              <label
+                className={isFriday(expiration) ? "is-friday" : undefined}
+                key={expiration}
+              >
                 <input
                   checked={selectedExpirations.includes(expiration)}
                   onChange={() => toggleExpiration(expiration)}
                   type="checkbox"
                 />
                 {expiration}
+                {isFriday(expiration) ? <span className="options-apr-friday-badge">Friday</span> : null}
               </label>
             ))}
           </div>
@@ -389,31 +430,7 @@ function OptionsAprPage() {
         <div className="options-apr-chart-wrap">
           <canvas ref={canvasRef} />
         </div>
-        {chains.length > 0 ? (
-          <div className="options-apr-series-controls" aria-label="Chart line visibility">
-            {chains.flatMap((chain, index) =>
-              (["call", "put"] as const).map((optionType) => {
-                const seriesKey = `${chain.expirationDate}:${optionType}`;
-                const color = CHART_COLORS[index % CHART_COLORS.length];
-                return (
-                  <label key={seriesKey}>
-                    <input
-                      checked={!hiddenSeries.includes(seriesKey)}
-                      onChange={() => toggleSeries(seriesKey)}
-                      type="checkbox"
-                    />
-                    <span
-                      className={`options-apr-series-swatch is-${optionType}`}
-                      style={{ borderColor: color }}
-                    />
-                    {chain.expirationDate} {optionType}
-                  </label>
-                );
-              }),
-            )}
-          </div>
-        ) : null}
-          <p className="options-apr-method-note">
+        <p className="options-apr-method-note">
           Put APR uses strike as cash collateral. Call APR uses the current share price as covered-call collateral.
           Yahoo chain requests are sequential with an {YAHOO_REQUEST_DELAY_MS} ms delay between expirations.
           Probability is a Black–Scholes risk-neutral estimate using Yahoo implied volatility and zero interest/dividend rates; it is not a forecast.

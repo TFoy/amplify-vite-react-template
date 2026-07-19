@@ -421,6 +421,24 @@ main {
   cursor: pointer;
 }
 
+.options-apr-expirations label.is-friday {
+  border-color: rgba(5, 150, 105, 0.5);
+  background: rgba(209, 250, 229, 0.82);
+  box-shadow: inset 3px 0 #059669;
+}
+
+.options-apr-friday-badge {
+  margin-left: auto;
+  border-radius: 999px;
+  background: #047857;
+  padding: 2px 7px;
+  color: white;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 .options-apr-selection-actions {
   display: flex;
   gap: 8px;
@@ -429,34 +447,6 @@ main {
 .options-apr-chart-wrap {
   height: 520px;
   margin-top: 18px;
-}
-
-.options-apr-series-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  margin-top: 16px;
-}
-
-.options-apr-series-controls label {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  border: 1px solid rgba(23, 50, 77, 0.12);
-  border-radius: 999px;
-  background: white;
-  padding: 6px 10px;
-  font-size: 0.84rem;
-  cursor: pointer;
-}
-
-.options-apr-series-swatch {
-  width: 22px;
-  border-top: 3px solid;
-}
-
-.options-apr-series-swatch.is-put {
-  border-top-style: dashed;
 }
 
 .options-apr-method-note {

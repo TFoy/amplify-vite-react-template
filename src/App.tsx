@@ -6,6 +6,7 @@ import FinnhubQuote from "./FinnhubQuote";
 import LandingPage from "./LandingPage";
 import MassiveDividends from "./MassiveDividends";
 import OptionsTrackerPage from "./OptionsTrackerPage";
+import OptionsAprPage from "./OptionsAprPage";
 import SchwabMarketInfo from "./SchwabMarketInfo";
 import StockAnalyzerEvaluationsPage from "./StockAnalyzerEvaluationsPage";
 import TastyAuthPage from "./TastyAuthPage";
@@ -139,6 +140,14 @@ function App() {
     return (
       <SiteFrame>
         <OptionsTrackerPage />
+      </SiteFrame>
+    );
+  }
+
+  if (pathname === "/options-apr") {
+    return (
+      <SiteFrame>
+        <OptionsAprPage />
       </SiteFrame>
     );
   }

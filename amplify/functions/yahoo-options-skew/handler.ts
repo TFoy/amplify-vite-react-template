@@ -94,6 +94,107 @@ function toDateOnly(value: Date) {
   return value.toISOString().slice(0, 10);
 }
 
+function standardNormalCdf(value: number) {
+  const absoluteValue = Math.abs(value);
+  const t = 1 / (1 + 0.2316419 * absoluteValue);
+  const density = Math.exp(-(absoluteValue * absoluteValue) / 2) / Math.sqrt(2 * Math.PI);
+  const polynomial =
+    t *
+    (0.31938153 +
+      t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  const positiveCdf = 1 - density * polynomial;
+  return value >= 0 ? positiveCdf : 1 - positiveCdf;
+}
+
+function probabilityExpiresWorthless(
+  optionType: "call" | "put",
+  underlyingPrice: number,
+  strike: number,
+  impliedVolatility: number,
+  yearsToExpiration: number,
+) {
+  if (
+    underlyingPrice <= 0 ||
+    strike <= 0 ||
+    impliedVolatility <= 0 ||
+    yearsToExpiration <= 0
+  ) {
+    return null;
+  }
+
+  // Black-Scholes N(d2), using zero rates and dividend yield. This is an
+  // implied risk-neutral estimate, not a forecast of the real-world outcome.
+  const volatilityOverTerm = impliedVolatility * Math.sqrt(yearsToExpiration);
+  const d2 =
+    (Math.log(underlyingPrice / strike) -
+      0.5 * impliedVolatility * impliedVolatility * yearsToExpiration) /
+    volatilityOverTerm;
+  return optionType === "call" ? standardNormalCdf(-d2) : standardNormalCdf(d2);
+}
+
+function calendarDaysToExpiration(expiration: Date) {
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.max(1, Math.round((expiration.getTime() - todayUtc) / 86_400_000));
+}
+
+function summarizeAprOption(
+  option: CallOrPut,
+  optionType: "call" | "put",
+  underlyingPrice: number,
+  daysToExpiration: number,
+) {
+  const bid = getFiniteNumber(option.bid);
+  const ask = getFiniteNumber(option.ask);
+  const midpoint = bid !== null && ask !== null ? (bid + ask) / 2 : null;
+  const collateral = optionType === "put" ? option.strike : underlyingPrice;
+  const simpleApr =
+    midpoint !== null && collateral > 0
+      ? (midpoint / collateral) * (365 / daysToExpiration)
+      : null;
+
+  return {
+    contractSymbol: option.contractSymbol,
+    optionType,
+    strike: option.strike,
+    bid,
+    ask,
+    midpoint,
+    simpleApr,
+    impliedVolatility: getFiniteNumber(option.impliedVolatility),
+    probabilityExpiresWorthless: probabilityExpiresWorthless(
+      optionType,
+      underlyingPrice,
+      option.strike,
+      option.impliedVolatility,
+      daysToExpiration / 365,
+    ),
+  };
+}
+
+function buildAprChain(result: OptionsResult) {
+  const chain = result.options[0];
+  const underlyingPrice = getUnderlyingPrice(result);
+  if (!chain || underlyingPrice === null) {
+    throw new Error("Yahoo did not return a usable option chain or underlying price.");
+  }
+
+  const daysToExpiration = calendarDaysToExpiration(chain.expirationDate);
+  return {
+    underlyingPrice,
+    expirationDate: toDateOnly(chain.expirationDate),
+    daysToExpiration,
+    calls: chain.calls
+      .filter((option) => Number.isFinite(option.strike))
+      .sort((left, right) => left.strike - right.strike)
+      .map((option) => summarizeAprOption(option, "call", underlyingPrice, daysToExpiration)),
+    puts: chain.puts
+      .filter((option) => Number.isFinite(option.strike))
+      .sort((left, right) => left.strike - right.strike)
+      .map((option) => summarizeAprOption(option, "put", underlyingPrice, daysToExpiration)),
+  };
+}
+
 function summarizeLeg(option: CallOrPut): OptionLegSummary {
   return {
     contractSymbol: option.contractSymbol,
@@ -249,6 +350,40 @@ export const handler = async (event: ApiGatewayEvent) => {
       return jsonResponse(200, {
         connected: true,
         detail: "Yahoo Finance option-chain access is configured.",
+      });
+    }
+
+    if (path.endsWith("/yahoo-options-apr/expirations")) {
+      await getAuthenticatedUserSub(event);
+      const symbol = query.symbol?.trim();
+      if (!symbol) {
+        return jsonResponse(400, { error: "Query parameter 'symbol' is required." });
+      }
+
+      const options = await yahooFinance.options(symbol.toUpperCase());
+      return jsonResponse(200, {
+        symbol: symbol.toUpperCase(),
+        underlyingPrice: getUnderlyingPrice(options),
+        expirationDates: options.expirationDates.map(toDateOnly),
+      });
+    }
+
+    if (path.endsWith("/yahoo-options-apr/chain")) {
+      await getAuthenticatedUserSub(event);
+      const symbol = query.symbol?.trim();
+      if (!symbol) {
+        return jsonResponse(400, { error: "Query parameter 'symbol' is required." });
+      }
+
+      const expiration = parseExpiration(query.expiration);
+      if (!expiration) {
+        return jsonResponse(400, { error: "Query parameter 'expiration' is required." });
+      }
+
+      const options = await yahooFinance.options(symbol.toUpperCase(), { date: expiration });
+      return jsonResponse(200, {
+        symbol: symbol.toUpperCase(),
+        data: buildAprChain(options),
       });
     }
 

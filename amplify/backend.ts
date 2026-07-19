@@ -214,6 +214,18 @@ schwabHttpApi.addRoutes({
   integration: yahooOptionsSkewIntegration,
 });
 
+schwabHttpApi.addRoutes({
+  path: "/yahoo-options-apr/expirations",
+  methods: [HttpMethod.GET],
+  integration: yahooOptionsSkewIntegration,
+});
+
+schwabHttpApi.addRoutes({
+  path: "/yahoo-options-apr/chain",
+  methods: [HttpMethod.GET],
+  integration: yahooOptionsSkewIntegration,
+});
+
 const apiBaseUrl = schwabHttpApi.url ?? "";
 const callbackUrl = `${apiBaseUrl}schwab/callback`;
 const tastyCallbackUrl = `${apiBaseUrl}tasty/callback`;
@@ -377,6 +389,8 @@ backend.addOutput({
       status_url: `${apiBaseUrl}yahoo-options-skew/status`,
       skew_url: `${apiBaseUrl}yahoo-options-skew/skew`,
       term_skew_url: `${apiBaseUrl}yahoo-options-skew/term-skew`,
+      apr_expirations_url: `${apiBaseUrl}yahoo-options-apr/expirations`,
+      apr_chain_url: `${apiBaseUrl}yahoo-options-apr/chain`,
     },
   },
 });

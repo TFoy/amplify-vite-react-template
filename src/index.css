@@ -384,6 +384,95 @@ main {
   margin-bottom: 0;
 }
 
+.options-apr-page {
+  width: min(1380px, calc(100vw - 48px));
+}
+
+.options-apr-symbol-form {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto;
+  gap: 10px;
+}
+
+.options-apr-symbol-form input {
+  min-width: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(23, 50, 77, 0.18);
+  border-radius: 8px;
+  background: white;
+  color: #172033;
+}
+
+.options-apr-expirations {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.options-apr-expirations label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid rgba(23, 50, 77, 0.12);
+  border-radius: 8px;
+  background: white;
+  padding: 9px 11px;
+  cursor: pointer;
+}
+
+.options-apr-selection-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.options-apr-chart-wrap {
+  height: 520px;
+  margin-top: 18px;
+}
+
+.options-apr-series-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 16px;
+}
+
+.options-apr-series-controls label {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  border: 1px solid rgba(23, 50, 77, 0.12);
+  border-radius: 999px;
+  background: white;
+  padding: 6px 10px;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.options-apr-series-swatch {
+  width: 22px;
+  border-top: 3px solid;
+}
+
+.options-apr-series-swatch.is-put {
+  border-top-style: dashed;
+}
+
+.options-apr-method-note {
+  margin-bottom: 0;
+  font-size: 0.88rem;
+}
+
+.options-apr-table {
+  min-width: 860px;
+}
+
+.options-apr-table td:first-child {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .options-tracker-page {
   width: min(1380px, calc(100vw - 32px));
   gap: 18px;
@@ -743,6 +832,14 @@ main {
 
   .skew-page {
     width: min(100vw - 24px, 1120px);
+  }
+
+  .options-apr-page {
+    width: min(100vw - 24px, 1380px);
+  }
+
+  .options-apr-symbol-form {
+    grid-template-columns: 1fr;
   }
 
   .skew-panel-header {

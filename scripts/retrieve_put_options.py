@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import argparse
 import math
+import re
 import sys
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import yfinance as yf
@@ -86,6 +88,9 @@ def main() -> int:
     if not ticker_symbol:
         print("error: ticker cannot be empty", file=sys.stderr)
         return 2
+    if not re.fullmatch(r"[A-Z0-9.^=-]+", ticker_symbol):
+        print("error: ticker contains unsupported characters", file=sys.stderr)
+        return 2
     if days_to_expiration <= 0:
         print("error: expiration must be after today", file=sys.stderr)
         return 2
@@ -112,20 +117,32 @@ def main() -> int:
         print("No puts with valid bid, ask, and strike values were returned.", file=sys.stderr)
         return 1
 
-    print(f"\n{ticker_symbol} puts expiring {expiration} ({days_to_expiration} calendar days)")
-    print(
-        tabulate(
-            rows,
-            headers=["Strike", "Bid", "Ask", "Midpoint", "Period return", "Simple APR"],
-            # ASCII-only so output works in legacy Windows PowerShell code pages.
-            tablefmt="github",
-            colalign=("right",) * 6,
-        )
+    heading = (
+        f"{ticker_symbol} puts expiring {expiration} "
+        f"({days_to_expiration} calendar days)"
     )
-    print(
-        "\nSimple APR = (midpoint / strike) x (365 / days to expiration). "
+    table = tabulate(
+        rows,
+        headers=["Strike", "Bid", "Ask", "Midpoint", "Period return", "Simple APR"],
+        # ASCII-only so output works in legacy Windows PowerShell code pages.
+        tablefmt="github",
+        colalign=("right",) * 6,
+    )
+    note = (
+        "Simple APR = (midpoint / strike) x (365 / days to expiration). "
         "Assumes expiration without assignment; excludes fees, taxes, and cash interest."
     )
+    report = f"{heading}\n\n{table}\n\n{note}\n"
+
+    output_path = Path("output") / ticker_symbol / f"CSP_{expiration.isoformat()}.txt"
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(report, encoding="utf-8")
+    except OSError as exc:
+        print(f"error: could not write {output_path}: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Wrote {len(rows)} put-option rows to {output_path.resolve()}")
     return 0
 
 

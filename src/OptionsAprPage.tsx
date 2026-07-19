@@ -57,6 +57,13 @@ type ChartPoint = {
   probabilityExpiresWorthless: number | null;
 };
 
+type DragZoom = {
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+};
+
 const CHART_COLORS = [
   "#2563eb",
   "#dc2626",
@@ -108,11 +115,13 @@ function OptionsAprPage() {
   const [chains, setChains] = useState<ChainResult[]>([]);
   const [isLoadingExpirations, setIsLoadingExpirations] = useState(false);
   const [isLoadingChains, setIsLoadingChains] = useState(false);
+  const [isZoomed, setIsZoomed] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartRef = useRef<Chart<"line"> | null>(null);
   const underlyingPriceRef = useRef<number | null>(null);
+  const dragZoomRef = useRef<DragZoom | null>(null);
 
   const apiBaseUrl = useMemo(() => {
     const custom = (outputs as AmplifyCustomOutputs).custom;
@@ -172,9 +181,29 @@ function OptionsAprPage() {
       },
     };
 
+    const dragZoomPlugin: Plugin<"line"> = {
+      id: "drag-zoom-selection",
+      afterDraw(chart) {
+        const drag = dragZoomRef.current;
+        if (!drag) {
+          return;
+        }
+        const left = Math.min(drag.startX, drag.currentX);
+        const top = Math.min(drag.startY, drag.currentY);
+        const width = Math.abs(drag.currentX - drag.startX);
+        const height = Math.abs(drag.currentY - drag.startY);
+        chart.ctx.save();
+        chart.ctx.fillStyle = "rgba(37, 99, 235, 0.14)";
+        chart.ctx.strokeStyle = "rgba(37, 99, 235, 0.9)";
+        chart.ctx.fillRect(left, top, width, height);
+        chart.ctx.strokeRect(left, top, width, height);
+        chart.ctx.restore();
+      },
+    };
+
     chartRef.current = new Chart(context, {
       type: "line",
-      plugins: [currentPricePlugin],
+      plugins: [currentPricePlugin, dragZoomPlugin],
       data: { datasets: [] },
       options: {
         responsive: true,
@@ -222,7 +251,94 @@ function OptionsAprPage() {
       },
     });
 
+    const canvas = canvasRef.current;
+    const chartCoordinates = (event: PointerEvent) => {
+      const bounds = canvas?.getBoundingClientRect();
+      return bounds ? { x: event.clientX - bounds.left, y: event.clientY - bounds.top } : null;
+    };
+    const isInsideChart = (x: number, y: number) => {
+      const area = chartRef.current?.chartArea;
+      return Boolean(
+        area && x >= area.left && x <= area.right && y >= area.top && y <= area.bottom,
+      );
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      const point = chartCoordinates(event);
+      if (!canvas || !point || !isInsideChart(point.x, point.y)) {
+        return;
+      }
+      canvas.setPointerCapture(event.pointerId);
+      dragZoomRef.current = {
+        startX: point.x,
+        startY: point.y,
+        currentX: point.x,
+        currentY: point.y,
+      };
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      const drag = dragZoomRef.current;
+      const point = chartCoordinates(event);
+      const area = chartRef.current?.chartArea;
+      if (!drag || !point || !area) {
+        return;
+      }
+      drag.currentX = Math.min(Math.max(point.x, area.left), area.right);
+      drag.currentY = Math.min(Math.max(point.y, area.top), area.bottom);
+      chartRef.current?.draw();
+    };
+    const handlePointerUp = (event: PointerEvent) => {
+      const chart = chartRef.current;
+      const drag = dragZoomRef.current;
+      dragZoomRef.current = null;
+      if (canvas?.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      if (!chart || !drag) {
+        return;
+      }
+      if (
+        Math.abs(drag.currentX - drag.startX) < 10 ||
+        Math.abs(drag.currentY - drag.startY) < 10
+      ) {
+        chart.draw();
+        return;
+      }
+
+      const xValues = [
+        chart.scales.x.getValueForPixel(drag.startX),
+        chart.scales.x.getValueForPixel(drag.currentX),
+      ];
+      const yValues = [
+        chart.scales.y.getValueForPixel(drag.startY),
+        chart.scales.y.getValueForPixel(drag.currentY),
+      ];
+      const xOptions = chart.options.scales?.x;
+      const yOptions = chart.options.scales?.y;
+      if (
+        xOptions &&
+        yOptions &&
+        xValues.every((value): value is number => typeof value === "number") &&
+        yValues.every((value): value is number => typeof value === "number")
+      ) {
+        xOptions.min = Math.min(...xValues);
+        xOptions.max = Math.max(...xValues);
+        yOptions.min = Math.min(...yValues);
+        yOptions.max = Math.max(...yValues);
+        setIsZoomed(true);
+        chart.update();
+      }
+    };
+
+    canvas?.addEventListener("pointerdown", handlePointerDown);
+    canvas?.addEventListener("pointermove", handlePointerMove);
+    canvas?.addEventListener("pointerup", handlePointerUp);
+    canvas?.addEventListener("pointercancel", handlePointerUp);
+
     return () => {
+      canvas?.removeEventListener("pointerdown", handlePointerDown);
+      canvas?.removeEventListener("pointermove", handlePointerMove);
+      canvas?.removeEventListener("pointerup", handlePointerUp);
+      canvas?.removeEventListener("pointercancel", handlePointerUp);
       chartRef.current?.destroy();
       chartRef.current = null;
     };
@@ -249,6 +365,22 @@ function OptionsAprPage() {
       : [];
     chart.update();
   }, [chartCreatedAt, companyName, loadedSymbol]);
+
+  function resetChartZoom() {
+    const chart = chartRef.current;
+    const xOptions = chart?.options.scales?.x;
+    const yOptions = chart?.options.scales?.y;
+    if (!chart || !xOptions || !yOptions) {
+      return;
+    }
+    xOptions.min = undefined;
+    xOptions.max = undefined;
+    yOptions.min = undefined;
+    yOptions.max = undefined;
+    dragZoomRef.current = null;
+    setIsZoomed(false);
+    chart.update();
+  }
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -321,6 +453,7 @@ function OptionsAprPage() {
     setError(null);
     setChains([]);
     setChartCreatedAt(null);
+    resetChartZoom();
     setExpirationDates([]);
     setSelectedExpirations([]);
     try {
@@ -359,6 +492,7 @@ function OptionsAprPage() {
     setError(null);
     setChains([]);
     setChartCreatedAt(new Date());
+    resetChartZoom();
     const loadedChains: ChainResult[] = [];
     try {
       for (const [index, expiration] of selectedExpirations.entries()) {
@@ -458,14 +592,22 @@ function OptionsAprPage() {
         <div className="skew-panel-header">
           <div>
             <h2>Simple APR vs. Strike</h2>
-            <p>Solid lines are calls; dashed lines are puts. Hover over any point for details.</p>
+            <p>
+              Solid lines are calls; dashed lines are puts. Hover for details, or drag a rectangle
+              over the plot to zoom.
+            </p>
           </div>
-          {underlyingPrice !== null ? (
-            <div className="skew-value">
-              <span>Underlying</span>
-              <strong>{formatCurrency(underlyingPrice)}</strong>
-            </div>
-          ) : null}
+          <div className="options-apr-chart-actions">
+            {underlyingPrice !== null ? (
+              <div className="skew-value">
+                <span>Underlying</span>
+                <strong>{formatCurrency(underlyingPrice)}</strong>
+              </div>
+            ) : null}
+            <button disabled={!isZoomed} onClick={resetChartZoom} type="button">
+              Reset zoom
+            </button>
+          </div>
         </div>
         <div className="options-apr-chart-wrap">
           <canvas ref={canvasRef} />

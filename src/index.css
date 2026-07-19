@@ -447,6 +447,15 @@ main {
 .options-apr-chart-wrap {
   height: 520px;
   margin-top: 18px;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.options-apr-chart-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 
 .options-apr-method-note {

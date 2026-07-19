@@ -64,6 +64,11 @@ const CHART_COLORS = [
   "#4f46e5",
   "#be185d",
 ];
+const YAHOO_REQUEST_DELAY_MS = 800;
+
+function sleep(delayMs: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+}
 
 function normalizeTicker(value: string) {
   return value.trim().toUpperCase().replace(/[^A-Z0-9.^=-]/g, "");
@@ -290,6 +295,10 @@ function OptionsAprPage() {
         );
         loadedChains.push(result.data);
         setChains([...loadedChains]);
+        if (index < selectedExpirations.length - 1) {
+          setProgress(`Waiting ${YAHOO_REQUEST_DELAY_MS} ms before the next Yahoo request...`);
+          await sleep(YAHOO_REQUEST_DELAY_MS);
+        }
       }
       setUnderlyingPrice(loadedChains[0]?.underlyingPrice ?? underlyingPrice);
       setProgress("");
@@ -404,8 +413,9 @@ function OptionsAprPage() {
             )}
           </div>
         ) : null}
-        <p className="options-apr-method-note">
+          <p className="options-apr-method-note">
           Put APR uses strike as cash collateral. Call APR uses the current share price as covered-call collateral.
+          Yahoo chain requests are sequential with an {YAHOO_REQUEST_DELAY_MS} ms delay between expirations.
           Probability is a Black–Scholes risk-neutral estimate using Yahoo implied volatility and zero interest/dividend rates; it is not a forecast.
         </p>
       </section>

@@ -19,6 +19,7 @@ type OptionRow = {
 };
 
 type ChainResult = {
+  companyName: string | null;
   underlyingPrice: number;
   expirationDate: string;
   daysToExpiration: number;
@@ -28,6 +29,7 @@ type ChainResult = {
 
 type ExpirationsResponse = {
   symbol: string;
+  companyName: string | null;
   underlyingPrice: number | null;
   expirationDates: string[];
   error?: string;
@@ -98,7 +100,9 @@ function OptionsAprPage() {
   const { user } = useAuthenticator((context) => [context.user]);
   const [symbol, setSymbol] = useState("");
   const [loadedSymbol, setLoadedSymbol] = useState("");
+  const [companyName, setCompanyName] = useState<string | null>(null);
   const [underlyingPrice, setUnderlyingPrice] = useState<number | null>(null);
+  const [chartCreatedAt, setChartCreatedAt] = useState<Date | null>(null);
   const [expirationDates, setExpirationDates] = useState<string[]>([]);
   const [selectedExpirations, setSelectedExpirations] = useState<string[]>([]);
   const [chains, setChains] = useState<ChainResult[]>([]);
@@ -180,6 +184,13 @@ function OptionsAprPage() {
         interaction: { intersect: false, mode: "nearest", axis: "xy" },
         plugins: {
           legend: { position: "bottom" },
+          title: {
+            display: false,
+            text: [],
+            color: "#172033",
+            font: { size: 16, weight: "bold" },
+            padding: { bottom: 14 },
+          },
           tooltip: {
             callbacks: {
               title(items) {
@@ -224,6 +235,23 @@ function OptionsAprPage() {
 
   useEffect(() => {
     const chart = chartRef.current;
+    const title = chart?.options.plugins?.title;
+    if (!chart || !title) {
+      return;
+    }
+
+    title.display = Boolean(loadedSymbol && chartCreatedAt);
+    title.text = chartCreatedAt
+      ? [
+          `${loadedSymbol}${companyName ? ` — ${companyName}` : ""}`,
+          `Chart created ${chartCreatedAt.toLocaleDateString()}`,
+        ]
+      : [];
+    chart.update();
+  }, [chartCreatedAt, companyName, loadedSymbol]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
     if (!chart) {
       return;
     }
@@ -233,7 +261,13 @@ function OptionsAprPage() {
       return (["call", "put"] as const).map((optionType) => {
         const options = optionType === "call" ? chain.calls : chain.puts;
         const data: ChartPoint[] = options
-          .filter((option) => option.simpleApr !== null)
+          .filter(
+            (option) =>
+              option.simpleApr !== null &&
+              (optionType === "call"
+                ? option.strike >= chain.underlyingPrice
+                : option.strike <= chain.underlyingPrice),
+          )
           .map((option) => ({
             x: option.strike,
             y: (option.simpleApr ?? 0) * 100,
@@ -286,6 +320,7 @@ function OptionsAprPage() {
     setIsLoadingExpirations(true);
     setError(null);
     setChains([]);
+    setChartCreatedAt(null);
     setExpirationDates([]);
     setSelectedExpirations([]);
     try {
@@ -295,6 +330,7 @@ function OptionsAprPage() {
       );
       setSymbol(result.symbol);
       setLoadedSymbol(result.symbol);
+      setCompanyName(result.companyName);
       setUnderlyingPrice(result.underlyingPrice);
       setExpirationDates(result.expirationDates);
       await saveLastTicker("options-apr", result.symbol);
@@ -322,6 +358,7 @@ function OptionsAprPage() {
     setIsLoadingChains(true);
     setError(null);
     setChains([]);
+    setChartCreatedAt(new Date());
     const loadedChains: ChainResult[] = [];
     try {
       for (const [index, expiration] of selectedExpirations.entries()) {
@@ -331,6 +368,9 @@ function OptionsAprPage() {
           `${apiBaseUrl}/yahoo-options-apr/chain?${params}`,
         );
         loadedChains.push(result.data);
+        if (result.data.companyName) {
+          setCompanyName(result.data.companyName);
+        }
         setChains([...loadedChains]);
         if (index < selectedExpirations.length - 1) {
           setProgress(`Waiting ${YAHOO_REQUEST_DELAY_MS} ms before the next Yahoo request...`);

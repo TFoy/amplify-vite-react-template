@@ -90,6 +90,17 @@ function getUnderlyingPrice(result: OptionsResult) {
   );
 }
 
+function getCompanyName(result: OptionsResult) {
+  const quote = result.quote as Record<string, unknown>;
+  for (const field of ["longName", "shortName", "displayName"]) {
+    const value = quote[field];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
 function toDateOnly(value: Date) {
   return value.toISOString().slice(0, 10);
 }
@@ -181,6 +192,7 @@ function buildAprChain(result: OptionsResult) {
 
   const daysToExpiration = calendarDaysToExpiration(chain.expirationDate);
   return {
+    companyName: getCompanyName(result),
     underlyingPrice,
     expirationDate: toDateOnly(chain.expirationDate),
     daysToExpiration,
@@ -363,6 +375,7 @@ export const handler = async (event: ApiGatewayEvent) => {
       const options = await yahooFinance.options(symbol.toUpperCase());
       return jsonResponse(200, {
         symbol: symbol.toUpperCase(),
+        companyName: getCompanyName(options),
         underlyingPrice: getUnderlyingPrice(options),
         expirationDates: options.expirationDates.map(toDateOnly),
       });

@@ -100,6 +100,14 @@ function formatPercent(value: number | null) {
   return value === null ? "--" : `${(value * 100).toFixed(2)}%`;
 }
 
+function parsePercentSetting(value: string) {
+  if (!value.trim()) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 function isFriday(expiration: string) {
   return new Date(`${expiration}T00:00:00Z`).getUTCDay() === 5;
 }
@@ -144,6 +152,8 @@ function OptionsAprPage() {
   const [isLoadingExpirations, setIsLoadingExpirations] = useState(false);
   const [isLoadingChains, setIsLoadingChains] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
+  const [minimumAprInput, setMinimumAprInput] = useState("");
+  const [minimumProbabilityInput, setMinimumProbabilityInput] = useState("");
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -158,6 +168,11 @@ function OptionsAprPage() {
       "",
     );
   }, []);
+  const minimumApr = useMemo(() => parsePercentSetting(minimumAprInput), [minimumAprInput]);
+  const minimumProbability = useMemo(
+    () => parsePercentSetting(minimumProbabilityInput),
+    [minimumProbabilityInput],
+  );
 
   useEffect(() => {
     if (!user) {
@@ -438,21 +453,30 @@ function OptionsAprPage() {
             midpoint: option.midpoint,
             probabilityExpiresWorthless: option.probabilityExpiresWorthless,
           }));
+        const isHighlighted = (point: ChartPoint) =>
+          minimumApr !== null &&
+          minimumProbability !== null &&
+          point.y >= minimumApr &&
+          point.probabilityExpiresWorthless !== null &&
+          point.probabilityExpiresWorthless * 100 >= minimumProbability;
         return {
           label: `${chain.expirationDate} ${optionType}`,
           data,
           borderColor: color,
           backgroundColor: color,
           borderDash: optionType === "put" ? [7, 4] : undefined,
-          pointRadius: 1.5,
-          pointHoverRadius: 5,
+          pointRadius: data.map((point) => (isHighlighted(point) ? 6 : 1.5)),
+          pointHoverRadius: data.map((point) => (isHighlighted(point) ? 8 : 5)),
+          pointBackgroundColor: data.map((point) => (isHighlighted(point) ? "#facc15" : color)),
+          pointBorderColor: data.map((point) => (isHighlighted(point) ? "#713f12" : color)),
+          pointBorderWidth: data.map((point) => (isHighlighted(point) ? 2 : 1)),
           borderWidth: 2,
           tension: 0.08,
         };
       });
     });
     chart.update();
-  }, [chains]);
+  }, [chains, minimumApr, minimumProbability]);
 
   async function fetchJson<T>(url: string): Promise<T> {
     const response = await fetch(url, { headers: await getAuthHeaders() });
@@ -642,6 +666,34 @@ function OptionsAprPage() {
         </div>
         <div className="options-apr-chart-wrap">
           <canvas ref={canvasRef} />
+        </div>
+        <div className="options-apr-thresholds">
+          <label>
+            Minimum Simple APR (%)
+            <input
+              min="0"
+              onChange={(event) => setMinimumAprInput(event.target.value)}
+              placeholder="e.g., 12"
+              step="0.1"
+              type="number"
+              value={minimumAprInput}
+            />
+          </label>
+          <label>
+            Minimum expires without exercise (%)
+            <input
+              max="100"
+              min="0"
+              onChange={(event) => setMinimumProbabilityInput(event.target.value)}
+              placeholder="e.g., 75"
+              step="0.1"
+              type="number"
+              value={minimumProbabilityInput}
+            />
+          </label>
+          <p className="options-apr-highlight-key">
+            <span aria-hidden="true" /> Gold points meet both minimums.
+          </p>
         </div>
         <p className="options-apr-method-note">
           Put APR uses strike as cash collateral. Call APR uses the current share price as covered-call collateral.

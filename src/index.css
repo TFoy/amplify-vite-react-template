@@ -458,6 +458,47 @@ main {
   align-items: center;
 }
 
+.options-apr-thresholds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 260px)) minmax(220px, 1fr);
+  gap: 12px;
+  align-items: end;
+  margin-top: 18px;
+}
+
+.options-apr-thresholds label {
+  display: grid;
+  gap: 6px;
+  color: #536173;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.options-apr-thresholds input {
+  min-width: 0;
+  border: 1px solid rgba(23, 50, 77, 0.18);
+  border-radius: 8px;
+  background: white;
+  padding: 0.65rem 0.75rem;
+  color: #172033;
+}
+
+.options-apr-highlight-key {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 9px;
+}
+
+.options-apr-highlight-key span {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  border: 2px solid #713f12;
+  border-radius: 50%;
+  background: #facc15;
+}
+
 .options-apr-method-note {
   margin-bottom: 0;
   font-size: 0.88rem;
@@ -838,6 +879,10 @@ main {
   }
 
   .options-apr-symbol-form {
+    grid-template-columns: 1fr;
+  }
+
+  .options-apr-thresholds {
     grid-template-columns: 1fr;
   }
 

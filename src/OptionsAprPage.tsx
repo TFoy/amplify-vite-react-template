@@ -139,6 +139,26 @@ function getDefaultExpirations(expirationDates: string[]) {
   return [...new Set([...firstFourFridays, ...fridaysThroughNextMonthlyExpiration])].sort();
 }
 
+function getNearNonFridayExpirations(expirationDates: string[]) {
+  const today = new Date();
+  const todayText = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
+  const oneYearFromToday = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+  const oneYearText = [
+    oneYearFromToday.getFullYear(),
+    String(oneYearFromToday.getMonth() + 1).padStart(2, "0"),
+    String(oneYearFromToday.getDate()).padStart(2, "0"),
+  ].join("-");
+
+  return expirationDates.filter(
+    (expiration) =>
+      !isFriday(expiration) && expiration > todayText && expiration < oneYearText,
+  );
+}
+
 function OptionsAprPage() {
   const { user } = useAuthenticator((context) => [context.user]);
   const [symbol, setSymbol] = useState("");
@@ -611,6 +631,14 @@ function OptionsAprPage() {
             <div className="options-apr-selection-actions">
               <button onClick={() => setSelectedExpirations(expirationDates)} type="button">
                 Select all
+              </button>
+              <button
+                onClick={() =>
+                  setSelectedExpirations(getNearNonFridayExpirations(expirationDates))
+                }
+                type="button"
+              >
+                Select Near Non-Friday
               </button>
               <button onClick={() => setSelectedExpirations([])} type="button">
                 Clear

@@ -146,16 +146,16 @@ function getNearNonFridayExpirations(expirationDates: string[]) {
     String(today.getMonth() + 1).padStart(2, "0"),
     String(today.getDate()).padStart(2, "0"),
   ].join("-");
-  const oneYearFromToday = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
-  const oneYearText = [
-    oneYearFromToday.getFullYear(),
-    String(oneYearFromToday.getMonth() + 1).padStart(2, "0"),
-    String(oneYearFromToday.getDate()).padStart(2, "0"),
+  const sixMonthsFromToday = new Date(today.getFullYear(), today.getMonth() + 6, today.getDate());
+  const sixMonthsText = [
+    sixMonthsFromToday.getFullYear(),
+    String(sixMonthsFromToday.getMonth() + 1).padStart(2, "0"),
+    String(sixMonthsFromToday.getDate()).padStart(2, "0"),
   ].join("-");
 
   return expirationDates.filter(
     (expiration) =>
-      !isFriday(expiration) && expiration > todayText && expiration < oneYearText,
+      !isFriday(expiration) && expiration >= todayText && expiration < sixMonthsText,
   );
 }
 
@@ -172,8 +172,8 @@ function OptionsAprPage() {
   const [isLoadingExpirations, setIsLoadingExpirations] = useState(false);
   const [isLoadingChains, setIsLoadingChains] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
-  const [minimumAprInput, setMinimumAprInput] = useState("");
-  const [minimumProbabilityInput, setMinimumProbabilityInput] = useState("");
+  const [minimumAprInput, setMinimumAprInput] = useState("25");
+  const [minimumProbabilityInput, setMinimumProbabilityInput] = useState("90");
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);

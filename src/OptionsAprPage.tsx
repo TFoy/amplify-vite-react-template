@@ -65,6 +65,8 @@ type DragZoom = {
   currentY: number;
 };
 
+type RequestedOptionType = "both" | "call" | "put";
+
 const CHART_COLORS = [
   "#2563eb",
   "#dc2626",
@@ -168,6 +170,7 @@ function OptionsAprPage() {
   const [chartCreatedAt, setChartCreatedAt] = useState<Date | null>(null);
   const [expirationDates, setExpirationDates] = useState<string[]>([]);
   const [selectedExpirations, setSelectedExpirations] = useState<string[]>([]);
+  const [requestedOptionType, setRequestedOptionType] = useState<RequestedOptionType>("both");
   const [chains, setChains] = useState<ChainResult[]>([]);
   const [isLoadingExpirations, setIsLoadingExpirations] = useState(false);
   const [isLoadingChains, setIsLoadingChains] = useState(false);
@@ -454,7 +457,7 @@ function OptionsAprPage() {
 
     chart.data.datasets = chains.flatMap((chain, index) => {
       const color = CHART_COLORS[index % CHART_COLORS.length];
-      return (["call", "put"] as const).map((optionType) => {
+      return (["call", "put"] as const).flatMap((optionType) => {
         const options = optionType === "call" ? chain.calls : chain.puts;
         const data: ChartPoint[] = options
           .filter(
@@ -479,7 +482,7 @@ function OptionsAprPage() {
           point.y >= minimumApr &&
           point.probabilityExpiresWorthless !== null &&
           point.probabilityExpiresWorthless * 100 >= minimumProbability;
-        return {
+        return data.length === 0 ? [] : [{
           label: `${chain.expirationDate} ${optionType}`,
           data,
           borderColor: color,
@@ -492,7 +495,7 @@ function OptionsAprPage() {
           pointBorderWidth: data.map((point) => (isHighlighted(point) ? 2 : 1)),
           borderWidth: 2,
           tension: 0.08,
-        };
+        }];
       });
     });
     chart.update();
@@ -572,7 +575,11 @@ function OptionsAprPage() {
     try {
       for (const [index, expiration] of selectedExpirations.entries()) {
         setProgress(`Retrieving ${index + 1} of ${selectedExpirations.length}: ${expiration}`);
-        const params = new URLSearchParams({ symbol: loadedSymbol, expiration });
+        const params = new URLSearchParams({
+          symbol: loadedSymbol,
+          expiration,
+          optionType: requestedOptionType,
+        });
         const result = await fetchJson<ChainResponse>(
           `${apiBaseUrl}/yahoo-options-apr/chain?${params}`,
         );
@@ -661,13 +668,29 @@ function OptionsAprPage() {
               </label>
             ))}
           </div>
-          <button
-            disabled={isLoadingChains || selectedExpirations.length === 0}
-            onClick={() => void loadSelectedChains()}
-            type="button"
-          >
-            {isLoadingChains ? progress : `Retrieve ${selectedExpirations.length} Option Chain${selectedExpirations.length === 1 ? "" : "s"}`}
-          </button>
+          <div className="options-apr-retrieve-controls">
+            <label>
+              Option types
+              <select
+                disabled={isLoadingChains}
+                onChange={(event) =>
+                  setRequestedOptionType(event.target.value as RequestedOptionType)
+                }
+                value={requestedOptionType}
+              >
+                <option value="both">Calls and puts</option>
+                <option value="put">Puts only</option>
+                <option value="call">Calls only</option>
+              </select>
+            </label>
+            <button
+              disabled={isLoadingChains || selectedExpirations.length === 0}
+              onClick={() => void loadSelectedChains()}
+              type="button"
+            >
+              {isLoadingChains ? progress : `Retrieve ${selectedExpirations.length} Option Chain${selectedExpirations.length === 1 ? "" : "s"}`}
+            </button>
+          </div>
         </section>
       ) : null}
 

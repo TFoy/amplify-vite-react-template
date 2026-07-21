@@ -183,7 +183,7 @@ function summarizeAprOption(
   };
 }
 
-function buildAprChain(result: OptionsResult) {
+function buildAprChain(result: OptionsResult, requestedOptionType: "both" | "call" | "put") {
   const chain = result.options[0];
   const underlyingPrice = getUnderlyingPrice(result);
   if (!chain || underlyingPrice === null) {
@@ -196,14 +196,24 @@ function buildAprChain(result: OptionsResult) {
     underlyingPrice,
     expirationDate: toDateOnly(chain.expirationDate),
     daysToExpiration,
-    calls: chain.calls
-      .filter((option) => Number.isFinite(option.strike))
-      .sort((left, right) => left.strike - right.strike)
-      .map((option) => summarizeAprOption(option, "call", underlyingPrice, daysToExpiration)),
-    puts: chain.puts
-      .filter((option) => Number.isFinite(option.strike))
-      .sort((left, right) => left.strike - right.strike)
-      .map((option) => summarizeAprOption(option, "put", underlyingPrice, daysToExpiration)),
+    calls:
+      requestedOptionType === "put"
+        ? []
+        : chain.calls
+            .filter((option) => Number.isFinite(option.strike))
+            .sort((left, right) => left.strike - right.strike)
+            .map((option) =>
+              summarizeAprOption(option, "call", underlyingPrice, daysToExpiration),
+            ),
+    puts:
+      requestedOptionType === "call"
+        ? []
+        : chain.puts
+            .filter((option) => Number.isFinite(option.strike))
+            .sort((left, right) => left.strike - right.strike)
+            .map((option) =>
+              summarizeAprOption(option, "put", underlyingPrice, daysToExpiration),
+            ),
   };
 }
 
@@ -393,10 +403,17 @@ export const handler = async (event: ApiGatewayEvent) => {
         return jsonResponse(400, { error: "Query parameter 'expiration' is required." });
       }
 
+      const optionType = query.optionType ?? "both";
+      if (optionType !== "both" && optionType !== "call" && optionType !== "put") {
+        return jsonResponse(400, {
+          error: "Query parameter 'optionType' must be 'both', 'call', or 'put'.",
+        });
+      }
+
       const options = await yahooFinance.options(symbol.toUpperCase(), { date: expiration });
       return jsonResponse(200, {
         symbol: symbol.toUpperCase(),
-        data: buildAprChain(options),
+        data: buildAprChain(options, optionType),
       });
     }
 

@@ -444,6 +444,13 @@ main {
   gap: 7px;
 }
 
+.options-apr-history-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .options-apr-history-actions button:first-child {
   min-width: 42px;
   color: #8a6410;

@@ -170,3 +170,12 @@ export async function deleteAllOptionsAprHistory(ticker: string) {
     await deleteOptionsAprHistory(record.id);
   }
 }
+
+export async function deleteNonFavoriteOptionsAprHistory(ticker: string) {
+  const records = await listOptionsAprHistory(ticker);
+  for (const record of records) {
+    if (!record.favorite) {
+      await deleteOptionsAprHistory(record.id);
+    }
+  }
+}

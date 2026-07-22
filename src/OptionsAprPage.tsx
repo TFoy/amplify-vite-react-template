@@ -132,6 +132,12 @@ function isFriday(expiration: string) {
   return new Date(`${expiration}T00:00:00Z`).getUTCDay() === 5;
 }
 
+function isThirdFriday(expiration: string) {
+  const expirationDate = new Date(`${expiration}T00:00:00Z`);
+  const dayOfMonth = expirationDate.getUTCDate();
+  return expirationDate.getUTCDay() === 5 && dayOfMonth >= 15 && dayOfMonth <= 21;
+}
+
 function getThirdFridayOfNextMonth() {
   const today = new Date();
   const firstOfNextMonth = new Date(
@@ -809,12 +815,24 @@ function OptionsAprPage() {
                 Select all
               </button>
               <button
+                onClick={() => setSelectedExpirations(expirationDates.filter(isFriday).slice(0, 5))}
+                type="button"
+              >
+                Select Near Friday
+              </button>
+              <button
                 onClick={() =>
                   setSelectedExpirations(getNearNonFridayExpirations(expirationDates))
                 }
                 type="button"
               >
                 Select Near Non-Friday
+              </button>
+              <button
+                onClick={() => setSelectedExpirations(expirationDates.slice(0, 5))}
+                type="button"
+              >
+                Select First Five
               </button>
               <button onClick={() => setSelectedExpirations([])} type="button">
                 Clear
@@ -824,7 +842,12 @@ function OptionsAprPage() {
           <div className="options-apr-expirations">
             {expirationDates.map((expiration) => (
               <label
-                className={isFriday(expiration) ? "is-friday" : undefined}
+                className={[
+                  isFriday(expiration) ? "is-friday" : "",
+                  isThirdFriday(expiration) ? "is-third-friday" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ") || undefined}
                 key={expiration}
               >
                 <input
@@ -833,7 +856,11 @@ function OptionsAprPage() {
                   type="checkbox"
                 />
                 {expiration}
-                {isFriday(expiration) ? <span className="options-apr-friday-badge">Friday</span> : null}
+                {isFriday(expiration) ? (
+                  <span className="options-apr-friday-badge">
+                    {isThirdFriday(expiration) ? "3rd Friday" : "Friday"}
+                  </span>
+                ) : null}
               </label>
             ))}
           </div>

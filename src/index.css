@@ -491,6 +491,16 @@ main {
   box-shadow: inset 3px 0 #059669;
 }
 
+.options-apr-expirations label.is-third-friday {
+  border-color: rgba(4, 120, 87, 0.72);
+  background: rgba(167, 243, 208, 0.92);
+  box-shadow: inset 4px 0 #047857;
+}
+
+.options-apr-expirations label.is-third-friday .options-apr-friday-badge {
+  background: #065f46;
+}
+
 .options-apr-friday-badge {
   margin-left: auto;
   border-radius: 999px;

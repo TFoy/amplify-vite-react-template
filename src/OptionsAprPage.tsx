@@ -4,6 +4,15 @@ import type { Plugin } from "chart.js";
 import { useAuthenticator } from "@aws-amplify/ui-react";
 import outputs from "../amplify_outputs.json";
 import { getAuthHeaders } from "./auth";
+import {
+  deleteAllOptionsAprHistory,
+  deleteOptionsAprHistory,
+  listOptionsAprHistory,
+  loadOptionsAprHistory,
+  saveOptionsAprHistory,
+  setOptionsAprHistoryFavorite,
+  type OptionsAprHistoryRecord,
+} from "./optionsAprHistory";
 import { loadLastTicker, saveLastTicker } from "./userPreferences";
 
 type OptionRow = {
@@ -18,7 +27,7 @@ type OptionRow = {
   probabilityExpiresWorthless: number | null;
 };
 
-type ChainResult = {
+export type ChainResult = {
   companyName: string | null;
   underlyingPrice: number;
   expirationDate: string;
@@ -65,7 +74,7 @@ type DragZoom = {
   currentY: number;
 };
 
-type RequestedOptionType = "both" | "call" | "put";
+export type RequestedOptionType = "both" | "call" | "put";
 
 const CHART_COLORS = [
   "#2563eb",
@@ -100,6 +109,13 @@ function formatCurrency(value: number | null) {
 
 function formatPercent(value: number | null) {
   return value === null ? "--" : `${(value * 100).toFixed(2)}%`;
+}
+
+function formatHistoryDate(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 function parsePercentSetting(value: string) {
@@ -177,6 +193,9 @@ function OptionsAprPage() {
   const [isZoomed, setIsZoomed] = useState(false);
   const [minimumAprInput, setMinimumAprInput] = useState("25");
   const [minimumProbabilityInput, setMinimumProbabilityInput] = useState("90");
+  const [history, setHistory] = useState<OptionsAprHistoryRecord[]>([]);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -204,6 +223,40 @@ function OptionsAprPage() {
     }
     void loadLastTicker("options-apr").then((ticker) => setSymbol(ticker ?? ""));
   }, [user]);
+
+  useEffect(() => {
+    const ticker = normalizeTicker(symbol);
+    let cancelled = false;
+    setHistoryError(null);
+    if (!user || !ticker) {
+      setHistory([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void listOptionsAprHistory(ticker)
+      .then((records) => {
+        if (!cancelled) {
+          setHistory(records);
+          setSelectedHistoryId((current) =>
+            current && records.some((record) => record.id === current) ? current : null,
+          );
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (!cancelled) {
+          setHistory([]);
+          setHistoryError(
+            loadError instanceof Error ? loadError.message : "Unable to load saved history.",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, user]);
 
   useEffect(() => {
     const context = canvasRef.current?.getContext("2d");
@@ -560,6 +613,79 @@ function OptionsAprPage() {
     );
   }
 
+  async function refreshHistory(ticker: string) {
+    const records = await listOptionsAprHistory(ticker);
+    setHistory(records);
+  }
+
+  async function handleLoadHistory(record: OptionsAprHistoryRecord) {
+    setHistoryError(null);
+    try {
+      const snapshot = await loadOptionsAprHistory(record);
+      setSymbol(record.ticker);
+      setLoadedSymbol(record.ticker);
+      setCompanyName(record.companyName);
+      setUnderlyingPrice(record.underlyingPrice);
+      setChartCreatedAt(new Date(record.retrievedAt));
+      setRequestedOptionType(record.requestedOptionType);
+      setSelectedExpirations(record.selectedExpirations);
+      setChains(snapshot.chains);
+      setSelectedHistoryId(record.id);
+      resetChartZoom();
+    } catch (loadError) {
+      setHistoryError(
+        loadError instanceof Error ? loadError.message : "Unable to load the saved data set.",
+      );
+    }
+  }
+
+  async function handleToggleFavorite(record: OptionsAprHistoryRecord) {
+    setHistoryError(null);
+    try {
+      await setOptionsAprHistoryFavorite(record.id, !record.favorite);
+      await refreshHistory(record.ticker);
+    } catch (favoriteError) {
+      setHistoryError(
+        favoriteError instanceof Error ? favoriteError.message : "Unable to update favorite.",
+      );
+    }
+  }
+
+  async function handleDeleteHistory(record: OptionsAprHistoryRecord) {
+    if (!window.confirm(`Delete the ${formatHistoryDate(record.retrievedAt)} data set?`)) {
+      return;
+    }
+    setHistoryError(null);
+    try {
+      await deleteOptionsAprHistory(record.id);
+      if (selectedHistoryId === record.id) {
+        setSelectedHistoryId(null);
+      }
+      await refreshHistory(record.ticker);
+    } catch (deleteError) {
+      setHistoryError(
+        deleteError instanceof Error ? deleteError.message : "Unable to delete the data set.",
+      );
+    }
+  }
+
+  async function handleDeleteAllHistory() {
+    const ticker = normalizeTicker(symbol);
+    if (!ticker || !window.confirm(`Delete every saved ${ticker} option-chain data set?`)) {
+      return;
+    }
+    setHistoryError(null);
+    try {
+      await deleteAllOptionsAprHistory(ticker);
+      setHistory([]);
+      setSelectedHistoryId(null);
+    } catch (deleteError) {
+      setHistoryError(
+        deleteError instanceof Error ? deleteError.message : "Unable to delete saved data sets.",
+      );
+    }
+  }
+
   async function loadSelectedChains() {
     if (!loadedSymbol || selectedExpirations.length === 0) {
       setError("Select at least one expiration date.");
@@ -569,7 +695,8 @@ function OptionsAprPage() {
     setIsLoadingChains(true);
     setError(null);
     setChains([]);
-    setChartCreatedAt(new Date());
+    const retrievedAt = new Date();
+    setChartCreatedAt(retrievedAt);
     resetChartZoom();
     const loadedChains: ChainResult[] = [];
     try {
@@ -593,7 +720,20 @@ function OptionsAprPage() {
           await sleep(YAHOO_REQUEST_DELAY_MS);
         }
       }
-      setUnderlyingPrice(loadedChains[0]?.underlyingPrice ?? underlyingPrice);
+      const snapshotUnderlyingPrice = loadedChains[0]?.underlyingPrice ?? underlyingPrice;
+      const snapshotCompanyName = loadedChains[0]?.companyName ?? companyName;
+      setUnderlyingPrice(snapshotUnderlyingPrice);
+      const savedHistory = await saveOptionsAprHistory({
+        ticker: loadedSymbol,
+        companyName: snapshotCompanyName,
+        underlyingPrice: snapshotUnderlyingPrice,
+        retrievedAt: retrievedAt.toISOString(),
+        requestedOptionType,
+        selectedExpirations: [...selectedExpirations],
+        chains: loadedChains,
+      });
+      setSelectedHistoryId(savedHistory.id);
+      await refreshHistory(loadedSymbol);
       setProgress("");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to retrieve option chains.");
@@ -628,6 +768,71 @@ function OptionsAprPage() {
       </section>
 
       {error ? <p className="skew-error">{error}</p> : null}
+      {normalizeTicker(symbol) ? (
+        <section className="skew-panel options-apr-history-panel">
+          <div className="skew-panel-header">
+            <div>
+              <h2>{normalizeTicker(symbol)} Retrieval History</h2>
+              <p>Select a saved data set to restore its chart and option tables.</p>
+            </div>
+            <button
+              className="options-apr-delete-all"
+              disabled={history.length === 0}
+              onClick={() => void handleDeleteAllHistory()}
+              type="button"
+            >
+              Delete all for {normalizeTicker(symbol)}
+            </button>
+          </div>
+          {historyError ? <p className="skew-error">{historyError}</p> : null}
+          {history.length > 0 ? (
+            <div className="options-apr-history-list">
+              {history.map((record) => (
+                <article
+                  className={selectedHistoryId === record.id ? "is-selected" : undefined}
+                  key={record.id}
+                >
+                  <button
+                    className="options-apr-history-load"
+                    onClick={() => void handleLoadHistory(record)}
+                    type="button"
+                  >
+                    <strong>{formatHistoryDate(record.retrievedAt)}</strong>
+                    <span>
+                      {record.selectedExpirations.length} expiration
+                      {record.selectedExpirations.length === 1 ? "" : "s"} · {record.requestedOptionType}
+                      {record.underlyingPrice !== null
+                        ? ` · ${formatCurrency(record.underlyingPrice)}`
+                        : ""}
+                    </span>
+                  </button>
+                  <div className="options-apr-history-actions">
+                    <button
+                      aria-label={record.favorite ? "Remove from favorites" : "Add to favorites"}
+                      className={record.favorite ? "is-favorite" : undefined}
+                      onClick={() => void handleToggleFavorite(record)}
+                      title={record.favorite ? "Remove from favorites" : "Add to favorites"}
+                      type="button"
+                    >
+                      {record.favorite ? "★" : "☆"}
+                    </button>
+                    <button
+                      aria-label={`Delete data set from ${formatHistoryDate(record.retrievedAt)}`}
+                      className="options-apr-history-delete"
+                      onClick={() => void handleDeleteHistory(record)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="skew-empty">No saved data sets for this ticker yet.</p>
+          )}
+        </section>
+      ) : null}
       {expirationDates.length > 0 ? (
         <section className="skew-panel">
           <div className="skew-panel-header">

@@ -75,6 +75,7 @@ type DragZoom = {
 };
 
 export type RequestedOptionType = "both" | "call" | "put";
+export type RequestedStrikeRange = "otm" | "all";
 
 const CHART_COLORS = [
   "#2563eb",
@@ -187,6 +188,7 @@ function OptionsAprPage() {
   const [expirationDates, setExpirationDates] = useState<string[]>([]);
   const [selectedExpirations, setSelectedExpirations] = useState<string[]>([]);
   const [requestedOptionType, setRequestedOptionType] = useState<RequestedOptionType>("both");
+  const [requestedStrikeRange, setRequestedStrikeRange] = useState<RequestedStrikeRange>("otm");
   const [chains, setChains] = useState<ChainResult[]>([]);
   const [isLoadingExpirations, setIsLoadingExpirations] = useState(false);
   const [isLoadingChains, setIsLoadingChains] = useState(false);
@@ -513,13 +515,7 @@ function OptionsAprPage() {
       return (["call", "put"] as const).flatMap((optionType) => {
         const options = optionType === "call" ? chain.calls : chain.puts;
         const data: ChartPoint[] = options
-          .filter(
-            (option) =>
-              option.simpleApr !== null &&
-              (optionType === "call"
-                ? option.strike >= chain.underlyingPrice
-                : option.strike <= chain.underlyingPrice),
-          )
+          .filter((option) => option.simpleApr !== null)
           .map((option) => ({
             x: option.strike,
             y: (option.simpleApr ?? 0) * 100,
@@ -628,6 +624,7 @@ function OptionsAprPage() {
       setUnderlyingPrice(record.underlyingPrice);
       setChartCreatedAt(new Date(record.retrievedAt));
       setRequestedOptionType(record.requestedOptionType);
+      setRequestedStrikeRange(record.requestedStrikeRange);
       setSelectedExpirations(record.selectedExpirations);
       setChains(snapshot.chains);
       setSelectedHistoryId(record.id);
@@ -706,6 +703,7 @@ function OptionsAprPage() {
           symbol: loadedSymbol,
           expiration,
           optionType: requestedOptionType,
+          strikeRange: requestedStrikeRange,
         });
         const result = await fetchJson<ChainResponse>(
           `${apiBaseUrl}/yahoo-options-apr/chain?${params}`,
@@ -729,6 +727,7 @@ function OptionsAprPage() {
         underlyingPrice: snapshotUnderlyingPrice,
         retrievedAt: retrievedAt.toISOString(),
         requestedOptionType,
+        requestedStrikeRange,
         selectedExpirations: [...selectedExpirations],
         chains: loadedChains,
       });
@@ -768,71 +767,6 @@ function OptionsAprPage() {
       </section>
 
       {error ? <p className="skew-error">{error}</p> : null}
-      {normalizeTicker(symbol) ? (
-        <section className="skew-panel options-apr-history-panel">
-          <div className="skew-panel-header">
-            <div>
-              <h2>{normalizeTicker(symbol)} Retrieval History</h2>
-              <p>Select a saved data set to restore its chart and option tables.</p>
-            </div>
-            <button
-              className="options-apr-delete-all"
-              disabled={history.length === 0}
-              onClick={() => void handleDeleteAllHistory()}
-              type="button"
-            >
-              Delete all for {normalizeTicker(symbol)}
-            </button>
-          </div>
-          {historyError ? <p className="skew-error">{historyError}</p> : null}
-          {history.length > 0 ? (
-            <div className="options-apr-history-list">
-              {history.map((record) => (
-                <article
-                  className={selectedHistoryId === record.id ? "is-selected" : undefined}
-                  key={record.id}
-                >
-                  <button
-                    className="options-apr-history-load"
-                    onClick={() => void handleLoadHistory(record)}
-                    type="button"
-                  >
-                    <strong>{formatHistoryDate(record.retrievedAt)}</strong>
-                    <span>
-                      {record.selectedExpirations.length} expiration
-                      {record.selectedExpirations.length === 1 ? "" : "s"} · {record.requestedOptionType}
-                      {record.underlyingPrice !== null
-                        ? ` · ${formatCurrency(record.underlyingPrice)}`
-                        : ""}
-                    </span>
-                  </button>
-                  <div className="options-apr-history-actions">
-                    <button
-                      aria-label={record.favorite ? "Remove from favorites" : "Add to favorites"}
-                      className={record.favorite ? "is-favorite" : undefined}
-                      onClick={() => void handleToggleFavorite(record)}
-                      title={record.favorite ? "Remove from favorites" : "Add to favorites"}
-                      type="button"
-                    >
-                      {record.favorite ? "★" : "☆"}
-                    </button>
-                    <button
-                      aria-label={`Delete data set from ${formatHistoryDate(record.retrievedAt)}`}
-                      className="options-apr-history-delete"
-                      onClick={() => void handleDeleteHistory(record)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="skew-empty">No saved data sets for this ticker yet.</p>
-          )}
-        </section>
-      ) : null}
       {expirationDates.length > 0 ? (
         <section className="skew-panel">
           <div className="skew-panel-header">
@@ -886,6 +820,19 @@ function OptionsAprPage() {
                 <option value="both">Calls and puts</option>
                 <option value="put">Puts only</option>
                 <option value="call">Calls only</option>
+              </select>
+            </label>
+            <label>
+              Strike coverage
+              <select
+                disabled={isLoadingChains}
+                onChange={(event) =>
+                  setRequestedStrikeRange(event.target.value as RequestedStrikeRange)
+                }
+                value={requestedStrikeRange}
+              >
+                <option value="otm">OTM/ATM only</option>
+                <option value="all">All strikes</option>
               </select>
             </label>
             <button
@@ -957,6 +904,73 @@ function OptionsAprPage() {
           Probability is a Black–Scholes risk-neutral estimate using Yahoo implied volatility and zero interest/dividend rates; it is not a forecast.
         </p>
       </section>
+
+      {normalizeTicker(symbol) ? (
+        <section className="skew-panel options-apr-history-panel">
+          <div className="skew-panel-header">
+            <div>
+              <h2>{normalizeTicker(symbol)} Retrieval History</h2>
+              <p>Select a saved data set to restore its chart and option tables.</p>
+            </div>
+            <button
+              className="options-apr-delete-all"
+              disabled={history.length === 0}
+              onClick={() => void handleDeleteAllHistory()}
+              type="button"
+            >
+              Delete all for {normalizeTicker(symbol)}
+            </button>
+          </div>
+          {historyError ? <p className="skew-error">{historyError}</p> : null}
+          {history.length > 0 ? (
+            <div className="options-apr-history-list">
+              {history.map((record) => (
+                <article
+                  className={selectedHistoryId === record.id ? "is-selected" : undefined}
+                  key={record.id}
+                >
+                  <button
+                    className="options-apr-history-load"
+                    onClick={() => void handleLoadHistory(record)}
+                    type="button"
+                  >
+                    <strong>{formatHistoryDate(record.retrievedAt)}</strong>
+                    <span>
+                      {record.selectedExpirations.length} expiration
+                      {record.selectedExpirations.length === 1 ? "" : "s"} · {record.requestedOptionType}
+                      {` · ${record.requestedStrikeRange === "all" ? "all strikes" : "OTM/ATM"}`}
+                      {record.underlyingPrice !== null
+                        ? ` · ${formatCurrency(record.underlyingPrice)}`
+                        : ""}
+                    </span>
+                  </button>
+                  <div className="options-apr-history-actions">
+                    <button
+                      aria-label={record.favorite ? "Remove from favorites" : "Add to favorites"}
+                      className={record.favorite ? "is-favorite" : undefined}
+                      onClick={() => void handleToggleFavorite(record)}
+                      title={record.favorite ? "Remove from favorites" : "Add to favorites"}
+                      type="button"
+                    >
+                      {record.favorite ? "★" : "☆"}
+                    </button>
+                    <button
+                      aria-label={`Delete data set from ${formatHistoryDate(record.retrievedAt)}`}
+                      className="options-apr-history-delete"
+                      onClick={() => void handleDeleteHistory(record)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="skew-empty">No saved data sets for this ticker yet.</p>
+          )}
+        </section>
+      ) : null}
 
       {chains.map((chain) => (
         <section className="skew-panel" key={chain.expirationDate}>

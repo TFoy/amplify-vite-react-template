@@ -1,6 +1,10 @@
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../amplify/data/resource";
-import type { ChainResult, RequestedOptionType } from "./OptionsAprPage";
+import type {
+  ChainResult,
+  RequestedOptionType,
+  RequestedStrikeRange,
+} from "./OptionsAprPage";
 
 const client = generateClient<Schema>();
 
@@ -11,6 +15,7 @@ export type OptionsAprHistoryRecord = {
   underlyingPrice: number | null;
   retrievedAt: string;
   requestedOptionType: RequestedOptionType;
+  requestedStrikeRange: RequestedStrikeRange;
   selectedExpirations: string[];
   favorite: boolean;
 };
@@ -30,6 +35,7 @@ function mapHistory(record: Schema["OptionsAprHistory"]["type"]): OptionsAprHist
       record.requestedOptionType === "call" || record.requestedOptionType === "put"
         ? record.requestedOptionType
         : "both",
+    requestedStrikeRange: record.requestedStrikeRange === "all" ? "all" : "otm",
     selectedExpirations: JSON.parse(record.selectedExpirationsJson) as string[],
     favorite: record.favorite,
   };
@@ -64,6 +70,7 @@ export async function saveOptionsAprHistory(input: {
   underlyingPrice: number | null;
   retrievedAt: string;
   requestedOptionType: RequestedOptionType;
+  requestedStrikeRange: RequestedStrikeRange;
   selectedExpirations: string[];
   chains: ChainResult[];
 }) {
@@ -73,6 +80,7 @@ export async function saveOptionsAprHistory(input: {
     underlyingPrice: input.underlyingPrice,
     retrievedAt: input.retrievedAt,
     requestedOptionType: input.requestedOptionType,
+    requestedStrikeRange: input.requestedStrikeRange,
     selectedExpirationsJson: JSON.stringify(input.selectedExpirations),
     favorite: false,
   });

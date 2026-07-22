@@ -183,7 +183,11 @@ function summarizeAprOption(
   };
 }
 
-function buildAprChain(result: OptionsResult, requestedOptionType: "both" | "call" | "put") {
+function buildAprChain(
+  result: OptionsResult,
+  requestedOptionType: "both" | "call" | "put",
+  requestedStrikeRange: "otm" | "all",
+) {
   const chain = result.options[0];
   const underlyingPrice = getUnderlyingPrice(result);
   if (!chain || underlyingPrice === null) {
@@ -200,7 +204,11 @@ function buildAprChain(result: OptionsResult, requestedOptionType: "both" | "cal
       requestedOptionType === "put"
         ? []
         : chain.calls
-            .filter((option) => Number.isFinite(option.strike))
+            .filter(
+              (option) =>
+                Number.isFinite(option.strike) &&
+                (requestedStrikeRange === "all" || option.strike >= underlyingPrice),
+            )
             .sort((left, right) => left.strike - right.strike)
             .map((option) =>
               summarizeAprOption(option, "call", underlyingPrice, daysToExpiration),
@@ -209,7 +217,11 @@ function buildAprChain(result: OptionsResult, requestedOptionType: "both" | "cal
       requestedOptionType === "call"
         ? []
         : chain.puts
-            .filter((option) => Number.isFinite(option.strike))
+            .filter(
+              (option) =>
+                Number.isFinite(option.strike) &&
+                (requestedStrikeRange === "all" || option.strike <= underlyingPrice),
+            )
             .sort((left, right) => left.strike - right.strike)
             .map((option) =>
               summarizeAprOption(option, "put", underlyingPrice, daysToExpiration),
@@ -410,10 +422,17 @@ export const handler = async (event: ApiGatewayEvent) => {
         });
       }
 
+      const strikeRange = query.strikeRange ?? "otm";
+      if (strikeRange !== "otm" && strikeRange !== "all") {
+        return jsonResponse(400, {
+          error: "Query parameter 'strikeRange' must be 'otm' or 'all'.",
+        });
+      }
+
       const options = await yahooFinance.options(symbol.toUpperCase(), { date: expiration });
       return jsonResponse(200, {
         symbol: symbol.toUpperCase(),
-        data: buildAprChain(options, optionType),
+        data: buildAprChain(options, optionType, strikeRange),
       });
     }
 

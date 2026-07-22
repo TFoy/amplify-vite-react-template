@@ -48,6 +48,7 @@ const schema = a.schema({
       underlyingPrice: a.float(),
       retrievedAt: a.datetime().required(),
       requestedOptionType: a.string().required(),
+      requestedStrikeRange: a.string(),
       selectedExpirationsJson: a.string().required(),
       favorite: a.boolean().required(),
     })

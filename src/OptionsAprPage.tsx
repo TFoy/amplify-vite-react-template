@@ -6,6 +6,7 @@ import outputs from "../amplify_outputs.json";
 import { getAuthHeaders } from "./auth";
 import {
   deleteAllOptionsAprHistory,
+  deleteNonFavoriteOptionsAprHistory,
   deleteOptionsAprHistory,
   listOptionsAprHistory,
   loadOptionsAprHistory,
@@ -683,6 +684,35 @@ function OptionsAprPage() {
     }
   }
 
+  async function handleDeleteNonFavoriteHistory() {
+    const ticker = normalizeTicker(symbol);
+    const deletableCount = history.filter((record) => !record.favorite).length;
+    if (
+      !ticker ||
+      deletableCount === 0 ||
+      !window.confirm(
+        `Delete ${deletableCount} non-favorite ${ticker} data set${deletableCount === 1 ? "" : "s"}?`,
+      )
+    ) {
+      return;
+    }
+    setHistoryError(null);
+    try {
+      await deleteNonFavoriteOptionsAprHistory(ticker);
+      const remainingHistory = await listOptionsAprHistory(ticker);
+      setHistory(remainingHistory);
+      setSelectedHistoryId((current) =>
+        current && remainingHistory.some((record) => record.id === current) ? current : null,
+      );
+    } catch (deleteError) {
+      setHistoryError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Unable to delete non-favorite data sets.",
+      );
+    }
+  }
+
   async function loadSelectedChains() {
     if (!loadedSymbol || selectedExpirations.length === 0) {
       setError("Select at least one expiration date.");
@@ -912,14 +942,24 @@ function OptionsAprPage() {
               <h2>{normalizeTicker(symbol)} Retrieval History</h2>
               <p>Select a saved data set to restore its chart and option tables.</p>
             </div>
-            <button
-              className="options-apr-delete-all"
-              disabled={history.length === 0}
-              onClick={() => void handleDeleteAllHistory()}
-              type="button"
-            >
-              Delete all for {normalizeTicker(symbol)}
-            </button>
+            <div className="options-apr-history-bulk-actions">
+              <button
+                className="options-apr-delete-all"
+                disabled={!history.some((record) => !record.favorite)}
+                onClick={() => void handleDeleteNonFavoriteHistory()}
+                type="button"
+              >
+                Delete all except favorites
+              </button>
+              <button
+                className="options-apr-delete-all"
+                disabled={history.length === 0}
+                onClick={() => void handleDeleteAllHistory()}
+                type="button"
+              >
+                Delete all for {normalizeTicker(symbol)}
+              </button>
+            </div>
           </div>
           {historyError ? <p className="skew-error">{historyError}</p> : null}
           {history.length > 0 ? (

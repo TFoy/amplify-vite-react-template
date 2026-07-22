@@ -49,6 +49,8 @@ const schema = a.schema({
       retrievedAt: a.datetime().required(),
       requestedOptionType: a.string().required(),
       requestedStrikeRange: a.string(),
+      nextEarningsDate: a.string(),
+      exDividendDate: a.string(),
       selectedExpirationsJson: a.string().required(),
       favorite: a.boolean().required(),
     })

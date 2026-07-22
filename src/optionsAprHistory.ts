@@ -16,6 +16,8 @@ export type OptionsAprHistoryRecord = {
   retrievedAt: string;
   requestedOptionType: RequestedOptionType;
   requestedStrikeRange: RequestedStrikeRange;
+  nextEarningsDate: string | null;
+  exDividendDate: string | null;
   selectedExpirations: string[];
   favorite: boolean;
 };
@@ -36,6 +38,8 @@ function mapHistory(record: Schema["OptionsAprHistory"]["type"]): OptionsAprHist
         ? record.requestedOptionType
         : "both",
     requestedStrikeRange: record.requestedStrikeRange === "all" ? "all" : "otm",
+    nextEarningsDate: record.nextEarningsDate ?? null,
+    exDividendDate: record.exDividendDate ?? null,
     selectedExpirations: JSON.parse(record.selectedExpirationsJson) as string[],
     favorite: record.favorite,
   };
@@ -71,6 +75,8 @@ export async function saveOptionsAprHistory(input: {
   retrievedAt: string;
   requestedOptionType: RequestedOptionType;
   requestedStrikeRange: RequestedStrikeRange;
+  nextEarningsDate: string | null;
+  exDividendDate: string | null;
   selectedExpirations: string[];
   chains: ChainResult[];
 }) {
@@ -81,6 +87,8 @@ export async function saveOptionsAprHistory(input: {
     retrievedAt: input.retrievedAt,
     requestedOptionType: input.requestedOptionType,
     requestedStrikeRange: input.requestedStrikeRange,
+    nextEarningsDate: input.nextEarningsDate,
+    exDividendDate: input.exDividendDate,
     selectedExpirationsJson: JSON.stringify(input.selectedExpirations),
     favorite: false,
   });

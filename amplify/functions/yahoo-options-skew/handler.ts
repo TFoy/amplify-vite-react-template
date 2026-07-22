@@ -1,5 +1,6 @@
 import YahooFinance from "yahoo-finance2";
 import type { CallOrPut, OptionsResult } from "yahoo-finance2/modules/options";
+import type { CalendarEvents } from "yahoo-finance2/modules/quoteSummary";
 import { getAuthenticatedUserSub } from "../shared/user-auth";
 
 type ApiGatewayEvent = {
@@ -103,6 +104,22 @@ function getCompanyName(result: OptionsResult) {
 
 function toDateOnly(value: Date) {
   return value.toISOString().slice(0, 10);
+}
+
+function getCalendarEventDates(calendarEvents: CalendarEvents | undefined) {
+  const today = new Date();
+  const todayText = toDateOnly(today);
+  const earningsDates = (calendarEvents?.earnings?.earningsDate ?? [])
+    .filter((value) => value instanceof Date && !Number.isNaN(value.getTime()))
+    .map(toDateOnly)
+    .sort();
+  return {
+    nextEarningsDate: earningsDates.find((value) => value >= todayText) ?? null,
+    exDividendDate:
+      calendarEvents?.exDividendDate instanceof Date
+        ? toDateOnly(calendarEvents.exDividendDate)
+        : null,
+  };
 }
 
 function standardNormalCdf(value: number) {
@@ -394,12 +411,27 @@ export const handler = async (event: ApiGatewayEvent) => {
         return jsonResponse(400, { error: "Query parameter 'symbol' is required." });
       }
 
-      const options = await yahooFinance.options(symbol.toUpperCase());
+      const normalizedSymbol = symbol.toUpperCase();
+      const options = await yahooFinance.options(normalizedSymbol);
+      await sleep(DEFAULT_YAHOO_DELAY_MS);
+      let calendarDates = { nextEarningsDate: null, exDividendDate: null } as {
+        nextEarningsDate: string | null;
+        exDividendDate: string | null;
+      };
+      try {
+        const quoteSummary = await yahooFinance.quoteSummary(normalizedSymbol, {
+          modules: ["calendarEvents"],
+        });
+        calendarDates = getCalendarEventDates(quoteSummary.calendarEvents);
+      } catch {
+        // Calendar data is optional; expiration retrieval should still succeed.
+      }
       return jsonResponse(200, {
-        symbol: symbol.toUpperCase(),
+        symbol: normalizedSymbol,
         companyName: getCompanyName(options),
         underlyingPrice: getUnderlyingPrice(options),
         expirationDates: options.expirationDates.map(toDateOnly),
+        ...calendarDates,
       });
     }
 

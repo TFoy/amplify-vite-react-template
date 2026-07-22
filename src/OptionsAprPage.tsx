@@ -42,6 +42,8 @@ type ExpirationsResponse = {
   companyName: string | null;
   underlyingPrice: number | null;
   expirationDates: string[];
+  nextEarningsDate: string | null;
+  exDividendDate: string | null;
   error?: string;
 };
 
@@ -192,6 +194,8 @@ function OptionsAprPage() {
   const [companyName, setCompanyName] = useState<string | null>(null);
   const [underlyingPrice, setUnderlyingPrice] = useState<number | null>(null);
   const [chartCreatedAt, setChartCreatedAt] = useState<Date | null>(null);
+  const [nextEarningsDate, setNextEarningsDate] = useState<string | null>(null);
+  const [exDividendDate, setExDividendDate] = useState<string | null>(null);
   const [expirationDates, setExpirationDates] = useState<string[]>([]);
   const [selectedExpirations, setSelectedExpirations] = useState<string[]>([]);
   const [requestedOptionType, setRequestedOptionType] = useState<RequestedOptionType>("both");
@@ -490,10 +494,17 @@ function OptionsAprPage() {
       ? [
           `${loadedSymbol}${companyName ? ` — ${companyName}` : ""}`,
           `Chart created ${chartCreatedAt.toLocaleDateString()}`,
+          [
+            nextEarningsDate ? `Next earnings: ${nextEarningsDate}` : "",
+            exDividendDate ? `Ex-dividend: ${exDividendDate}` : "",
+          ]
+            .filter(Boolean)
+            .join("  |  "),
         ]
+          .filter(Boolean)
       : [];
     chart.update();
-  }, [chartCreatedAt, companyName, loadedSymbol]);
+  }, [chartCreatedAt, companyName, exDividendDate, loadedSymbol, nextEarningsDate]);
 
   function resetChartZoom() {
     const chart = chartRef.current;
@@ -586,6 +597,8 @@ function OptionsAprPage() {
     setError(null);
     setChains([]);
     setChartCreatedAt(null);
+    setNextEarningsDate(null);
+    setExDividendDate(null);
     resetChartZoom();
     setExpirationDates([]);
     setSelectedExpirations([]);
@@ -599,6 +612,8 @@ function OptionsAprPage() {
       setCompanyName(result.companyName);
       setUnderlyingPrice(result.underlyingPrice);
       setExpirationDates(result.expirationDates);
+      setNextEarningsDate(result.nextEarningsDate);
+      setExDividendDate(result.exDividendDate);
       setSelectedExpirations(getDefaultExpirations(result.expirationDates));
       await saveLastTicker("options-apr", result.symbol);
     } catch (loadError) {
@@ -632,6 +647,8 @@ function OptionsAprPage() {
       setChartCreatedAt(new Date(record.retrievedAt));
       setRequestedOptionType(record.requestedOptionType);
       setRequestedStrikeRange(record.requestedStrikeRange);
+      setNextEarningsDate(record.nextEarningsDate);
+      setExDividendDate(record.exDividendDate);
       setSelectedExpirations(record.selectedExpirations);
       setChains(snapshot.chains);
       setSelectedHistoryId(record.id);
@@ -764,6 +781,8 @@ function OptionsAprPage() {
         retrievedAt: retrievedAt.toISOString(),
         requestedOptionType,
         requestedStrikeRange,
+        nextEarningsDate,
+        exDividendDate,
         selectedExpirations: [...selectedExpirations],
         chains: loadedChains,
       });

@@ -41,6 +41,28 @@ const schema = a.schema({
       columnWidths: a.string(),
     })
     .authorization((allow) => [allow.owner()]),
+  OptionsAprHistory: a
+    .model({
+      ticker: a.string().required(),
+      companyName: a.string(),
+      underlyingPrice: a.float(),
+      retrievedAt: a.datetime().required(),
+      requestedOptionType: a.string().required(),
+      selectedExpirationsJson: a.string().required(),
+      favorite: a.boolean().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
+  OptionsAprHistoryChain: a
+    .model({
+      historyId: a.id().required(),
+      companyName: a.string(),
+      underlyingPrice: a.float().required(),
+      expirationDate: a.string().required(),
+      daysToExpiration: a.integer().required(),
+      callsJson: a.string().required(),
+      putsJson: a.string().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

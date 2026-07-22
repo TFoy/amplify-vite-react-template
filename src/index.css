@@ -403,6 +403,63 @@ main {
   color: #172033;
 }
 
+.options-apr-history-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.options-apr-history-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(23, 50, 77, 0.14);
+  border-radius: 8px;
+  background: white;
+  padding: 8px;
+}
+
+.options-apr-history-list article.is-selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+}
+
+.options-apr-history-load {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  background: transparent;
+  color: #172033;
+  text-align: left;
+}
+
+.options-apr-history-load span {
+  color: #637185;
+  font-size: 0.84rem;
+}
+
+.options-apr-history-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.options-apr-history-actions button:first-child {
+  min-width: 42px;
+  color: #8a6410;
+  font-size: 1.2rem;
+}
+
+.options-apr-history-actions button.is-favorite {
+  background: #facc15;
+  color: #4a3100;
+}
+
+.options-apr-history-delete,
+.options-apr-delete-all {
+  background: #8f3d30;
+}
+
 .options-apr-expirations {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));

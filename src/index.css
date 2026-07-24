@@ -390,7 +390,7 @@ main {
 
 .options-apr-symbol-form {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) auto;
+  grid-template-columns: minmax(140px, 1fr) auto auto;
   gap: 10px;
 }
 

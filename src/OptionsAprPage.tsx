@@ -554,23 +554,24 @@ function OptionsAprPage() {
     return payload;
   }
 
-  async function handleLoadExpirations(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function validateExpirationLookup() {
     const normalizedSymbol = normalizeTicker(symbol);
     if (!user) {
       setError("Sign in to retrieve option chains.");
-      return;
+      return null;
     }
     if (!apiBaseUrl) {
       setError("The Yahoo options API URL is not configured.");
-      return;
+      return null;
     }
     if (!normalizedSymbol) {
       setError("Enter a ticker symbol.");
-      return;
+      return null;
     }
+    return normalizedSymbol;
+  }
 
-    setIsLoadingExpirations(true);
+  async function fetchAndApplyExpirations(normalizedSymbol: string) {
     setError(null);
     setChains([]);
     setChartCreatedAt(null);
@@ -579,22 +580,57 @@ function OptionsAprPage() {
     resetChartZoom();
     setExpirationDates([]);
     setSelectedExpirations([]);
+    const params = new URLSearchParams({ symbol: normalizedSymbol });
+    const result = await fetchJson<ExpirationsResponse>(
+      `${apiBaseUrl}/yahoo-options-apr/expirations?${params}`,
+    );
+    setSymbol(result.symbol);
+    setLoadedSymbol(result.symbol);
+    setCompanyName(result.companyName);
+    setUnderlyingPrice(result.underlyingPrice);
+    setExpirationDates(result.expirationDates);
+    setNextEarningsDate(result.nextEarningsDate);
+    setExDividendDate(result.exDividendDate);
+    setSelectedExpirations(getDefaultExpirations(result.expirationDates));
+    await saveLastTicker("options-apr", result.symbol);
+    return result;
+  }
+
+  async function handleLoadExpirations(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedSymbol = validateExpirationLookup();
+    if (!normalizedSymbol) {
+      return;
+    }
+
+    setIsLoadingExpirations(true);
     try {
-      const params = new URLSearchParams({ symbol: normalizedSymbol });
-      const result = await fetchJson<ExpirationsResponse>(
-        `${apiBaseUrl}/yahoo-options-apr/expirations?${params}`,
-      );
-      setSymbol(result.symbol);
-      setLoadedSymbol(result.symbol);
-      setCompanyName(result.companyName);
-      setUnderlyingPrice(result.underlyingPrice);
-      setExpirationDates(result.expirationDates);
-      setNextEarningsDate(result.nextEarningsDate);
-      setExDividendDate(result.exDividendDate);
-      setSelectedExpirations(getDefaultExpirations(result.expirationDates));
-      await saveLastTicker("options-apr", result.symbol);
+      await fetchAndApplyExpirations(normalizedSymbol);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to retrieve expirations.");
+    } finally {
+      setIsLoadingExpirations(false);
+    }
+  }
+
+  async function handleGetFirstFive() {
+    const normalizedSymbol = validateExpirationLookup();
+    if (!normalizedSymbol) {
+      return;
+    }
+
+    setIsLoadingExpirations(true);
+    try {
+      const result = await fetchAndApplyExpirations(normalizedSymbol);
+      const firstFiveExpirations = result.expirationDates.slice(0, 5);
+      setSelectedExpirations(firstFiveExpirations);
+      await loadSelectedChains(firstFiveExpirations, result.symbol, result);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to retrieve the first five option chains.",
+      );
     } finally {
       setIsLoadingExpirations(false);
     }
@@ -713,8 +749,12 @@ function OptionsAprPage() {
     }
   }
 
-  async function loadSelectedChains() {
-    if (!loadedSymbol || selectedExpirations.length === 0) {
+  async function loadSelectedChains(
+    expirationsToLoad = selectedExpirations,
+    tickerToLoad = loadedSymbol,
+    expirationMetadata?: ExpirationsResponse,
+  ) {
+    if (!tickerToLoad || expirationsToLoad.length === 0) {
       setError("Select at least one expiration date.");
       return;
     }
@@ -727,10 +767,10 @@ function OptionsAprPage() {
     resetChartZoom();
     const loadedChains: ChainResult[] = [];
     try {
-      for (const [index, expiration] of selectedExpirations.entries()) {
-        setProgress(`Retrieving ${index + 1} of ${selectedExpirations.length}: ${expiration}`);
+      for (const [index, expiration] of expirationsToLoad.entries()) {
+        setProgress(`Retrieving ${index + 1} of ${expirationsToLoad.length}: ${expiration}`);
         const params = new URLSearchParams({
-          symbol: loadedSymbol,
+          symbol: tickerToLoad,
           expiration,
           optionType: requestedOptionType,
           strikeRange: requestedStrikeRange,
@@ -743,28 +783,30 @@ function OptionsAprPage() {
           setCompanyName(result.data.companyName);
         }
         setChains([...loadedChains]);
-        if (index < selectedExpirations.length - 1) {
+        if (index < expirationsToLoad.length - 1) {
           setProgress(`Waiting ${YAHOO_REQUEST_DELAY_MS} ms before the next Yahoo request...`);
           await sleep(YAHOO_REQUEST_DELAY_MS);
         }
       }
-      const snapshotUnderlyingPrice = loadedChains[0]?.underlyingPrice ?? underlyingPrice;
-      const snapshotCompanyName = loadedChains[0]?.companyName ?? companyName;
+      const snapshotUnderlyingPrice =
+        loadedChains[0]?.underlyingPrice ?? expirationMetadata?.underlyingPrice ?? underlyingPrice;
+      const snapshotCompanyName =
+        loadedChains[0]?.companyName ?? expirationMetadata?.companyName ?? companyName;
       setUnderlyingPrice(snapshotUnderlyingPrice);
       const savedHistory = await saveOptionsAprHistory({
-        ticker: loadedSymbol,
+        ticker: tickerToLoad,
         companyName: snapshotCompanyName,
         underlyingPrice: snapshotUnderlyingPrice,
         retrievedAt: retrievedAt.toISOString(),
         requestedOptionType,
         requestedStrikeRange,
-        nextEarningsDate,
-        exDividendDate,
-        selectedExpirations: [...selectedExpirations],
+        nextEarningsDate: expirationMetadata?.nextEarningsDate ?? nextEarningsDate,
+        exDividendDate: expirationMetadata?.exDividendDate ?? exDividendDate,
+        selectedExpirations: [...expirationsToLoad],
         chains: loadedChains,
       });
       setSelectedHistoryId(savedHistory.id);
-      await refreshHistory(loadedSymbol);
+      await refreshHistory(tickerToLoad);
       setProgress("");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to retrieve option chains.");
@@ -794,6 +836,13 @@ function OptionsAprPage() {
           />
           <button disabled={isLoadingExpirations || isLoadingChains} type="submit">
             {isLoadingExpirations ? "Retrieving..." : "Get Expiration Dates"}
+          </button>
+          <button
+            disabled={isLoadingExpirations || isLoadingChains}
+            onClick={() => void handleGetFirstFive()}
+            type="button"
+          >
+            Get First Five
           </button>
         </form>
       </section>

@@ -140,31 +140,8 @@ function isThirdFriday(expiration: string) {
   return expirationDate.getUTCDay() === 5 && dayOfMonth >= 15 && dayOfMonth <= 21;
 }
 
-function getThirdFridayOfNextMonth() {
-  const today = new Date();
-  const firstOfNextMonth = new Date(
-    Date.UTC(today.getFullYear(), today.getMonth() + 1, 1),
-  );
-  const daysUntilFriday = (5 - firstOfNextMonth.getUTCDay() + 7) % 7;
-  return new Date(
-    Date.UTC(
-      firstOfNextMonth.getUTCFullYear(),
-      firstOfNextMonth.getUTCMonth(),
-      1 + daysUntilFriday + 14,
-    ),
-  )
-    .toISOString()
-    .slice(0, 10);
-}
-
 function getDefaultExpirations(expirationDates: string[]) {
-  const fridayExpirations = expirationDates.filter(isFriday);
-  const firstFourFridays = fridayExpirations.slice(0, 4);
-  const thirdFridayOfNextMonth = getThirdFridayOfNextMonth();
-  const fridaysThroughNextMonthlyExpiration = fridayExpirations.filter(
-    (expiration) => expiration <= thirdFridayOfNextMonth,
-  );
-  return [...new Set([...firstFourFridays, ...fridaysThroughNextMonthlyExpiration])].sort();
+  return expirationDates.slice(0, 5);
 }
 
 function getNearNonFridayExpirations(expirationDates: string[]) {

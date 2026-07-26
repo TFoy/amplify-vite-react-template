@@ -403,6 +403,46 @@ main {
   color: #172033;
 }
 
+.options-apr-ticker-combobox {
+  position: relative;
+  min-width: 0;
+}
+
+.options-apr-ticker-combobox > input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.options-apr-ticker-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid rgba(23, 50, 77, 0.2);
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 12px 28px rgba(23, 50, 77, 0.18);
+  padding: 5px;
+}
+
+.options-apr-ticker-list button {
+  display: block;
+  width: 100%;
+  border-radius: 5px;
+  background: transparent;
+  padding: 8px 10px;
+  color: #172033;
+  text-align: left;
+}
+
+.options-apr-ticker-list button:hover,
+.options-apr-ticker-list button[aria-selected="true"] {
+  background: rgba(37, 99, 235, 0.12);
+}
+
 .options-apr-history-list {
   display: grid;
   gap: 9px;

@@ -68,6 +68,43 @@ export async function listOptionsAprHistory(ticker: string) {
   });
 }
 
+export async function listOptionsAprHistoryTickers() {
+  const tickers = new Set<string>();
+  let nextToken: string | null | undefined;
+  do {
+    const result = await client.models.OptionsAprHistory.list({ nextToken });
+    if (result.errors) {
+      throw new Error(describeErrors(result.errors));
+    }
+    result.data.forEach((record) => tickers.add(record.ticker));
+    nextToken = result.nextToken;
+  } while (nextToken);
+
+  const tickerResult = await client.models.OptionsAprTicker.list({ limit: 1_000 });
+  if (tickerResult.errors) {
+    throw new Error(describeErrors(tickerResult.errors));
+  }
+  tickerResult.data.forEach((record) => tickers.add(record.ticker));
+  return [...tickers].sort((left, right) => left.localeCompare(right));
+}
+
+export async function rememberOptionsAprTicker(ticker: string) {
+  const existing = await client.models.OptionsAprTicker.list({
+    filter: { ticker: { eq: ticker } },
+  });
+  if (existing.errors) {
+    throw new Error(describeErrors(existing.errors));
+  }
+
+  const lastUsedAt = new Date().toISOString();
+  const result = existing.data[0]
+    ? await client.models.OptionsAprTicker.update({ id: existing.data[0].id, lastUsedAt })
+    : await client.models.OptionsAprTicker.create({ ticker, lastUsedAt });
+  if (!result.data || result.errors) {
+    throw new Error(describeErrors(result.errors));
+  }
+}
+
 export async function saveOptionsAprHistory(input: {
   ticker: string;
   companyName: string | null;

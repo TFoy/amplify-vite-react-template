@@ -66,6 +66,12 @@ const schema = a.schema({
       putsJson: a.string().required(),
     })
     .authorization((allow) => [allow.owner()]),
+  OptionsAprTicker: a
+    .model({
+      ticker: a.string().required(),
+      lastUsedAt: a.datetime().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

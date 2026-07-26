@@ -160,10 +160,11 @@ function probabilityExpiresWorthless(
   return optionType === "call" ? standardNormalCdf(-d2) : standardNormalCdf(d2);
 }
 
-function calendarDaysToExpiration(expiration: Date) {
+function calendarDaysToExpiration(expiration: Date, retrievalDate?: Date) {
   const now = new Date();
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return Math.max(1, Math.round((expiration.getTime() - todayUtc) / 86_400_000));
+  const calculationDate =
+    retrievalDate ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return Math.max(1, Math.round((expiration.getTime() - calculationDate.getTime()) / 86_400_000));
 }
 
 function summarizeAprOption(
@@ -204,6 +205,7 @@ function buildAprChain(
   result: OptionsResult,
   requestedOptionType: "both" | "call" | "put",
   requestedStrikeRange: "otm" | "all",
+  retrievalDate?: Date,
 ) {
   const chain = result.options[0];
   const underlyingPrice = getUnderlyingPrice(result);
@@ -211,7 +213,7 @@ function buildAprChain(
     throw new Error("Yahoo did not return a usable option chain or underlying price.");
   }
 
-  const daysToExpiration = calendarDaysToExpiration(chain.expirationDate);
+  const daysToExpiration = calendarDaysToExpiration(chain.expirationDate, retrievalDate);
   return {
     companyName: getCompanyName(result),
     underlyingPrice,
@@ -461,10 +463,12 @@ export const handler = async (event: ApiGatewayEvent) => {
         });
       }
 
+      const retrievalDate = parseExpiration(query.retrievalDate);
+
       const options = await yahooFinance.options(symbol.toUpperCase(), { date: expiration });
       return jsonResponse(200, {
         symbol: symbol.toUpperCase(),
-        data: buildAprChain(options, optionType, strikeRange),
+        data: buildAprChain(options, optionType, strikeRange, retrievalDate),
       });
     }
 

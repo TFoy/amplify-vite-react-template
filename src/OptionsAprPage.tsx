@@ -124,6 +124,14 @@ function formatHistoryDate(value: string) {
   });
 }
 
+function toLocalDateOnly(value: Date) {
+  return [
+    value.getFullYear(),
+    String(value.getMonth() + 1).padStart(2, "0"),
+    String(value.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function parsePercentSetting(value: string) {
   if (!value.trim()) {
     return null;
@@ -843,6 +851,7 @@ function OptionsAprPage() {
     setError(null);
     setChains([]);
     const retrievedAt = new Date();
+    const localRetrievalDate = toLocalDateOnly(retrievedAt);
     setChartCreatedAt(retrievedAt);
     resetChartZoom();
     const loadedChains: ChainResult[] = [];
@@ -854,6 +863,7 @@ function OptionsAprPage() {
           expiration,
           optionType: requestedOptionType,
           strikeRange: requestedStrikeRange,
+          retrievalDate: localRetrievalDate,
         });
         const result = await fetchJson<ChainResponse>(
           `${apiBaseUrl}/yahoo-options-apr/chain?${params}`,

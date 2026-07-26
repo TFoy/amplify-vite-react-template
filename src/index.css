@@ -406,11 +406,38 @@ main {
 .options-apr-ticker-combobox {
   position: relative;
   min-width: 0;
+  border-radius: 8px;
+  background: white;
 }
 
 .options-apr-ticker-combobox > input {
+  position: relative;
+  z-index: 1;
   width: 100%;
   box-sizing: border-box;
+  background: transparent;
+  text-transform: uppercase;
+}
+
+.options-apr-ticker-ghost {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 0.7rem 0.85rem;
+  color: transparent;
+  font: inherit;
+  line-height: normal;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.options-apr-ticker-ghost strong {
+  color: #9aa6b5;
+  font: inherit;
 }
 
 .options-apr-ticker-list {

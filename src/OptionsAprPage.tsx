@@ -218,6 +218,12 @@ function OptionsAprPage() {
     const prefix = normalizeTicker(symbol);
     return knownTickers.filter((ticker) => !prefix || ticker.startsWith(prefix));
   }, [knownTickers, symbol]);
+  const tickerPrefix = normalizeTicker(symbol);
+  const suggestedTicker = tickerPrefix ? matchingTickers[0] ?? null : null;
+  const tickerGhostSuffix =
+    suggestedTicker && suggestedTicker !== tickerPrefix
+      ? suggestedTicker.slice(tickerPrefix.length)
+      : "";
 
   useEffect(() => {
     if (!user) {
@@ -886,6 +892,12 @@ function OptionsAprPage() {
         </div>
         <form className="options-apr-symbol-form" onSubmit={handleLoadExpirations}>
           <div className="options-apr-ticker-combobox">
+            {tickerGhostSuffix ? (
+              <div aria-hidden="true" className="options-apr-ticker-ghost">
+                <span>{symbol}</span>
+                <strong>{tickerGhostSuffix}</strong>
+              </div>
+            ) : null}
             <input
               aria-autocomplete="list"
               aria-controls="options-apr-ticker-list"
@@ -900,6 +912,9 @@ function OptionsAprPage() {
               onFocus={() => setIsTickerDropdownOpen(true)}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
+                  setIsTickerDropdownOpen(false);
+                } else if (event.key === "Tab" && suggestedTicker) {
+                  setSymbol(suggestedTicker);
                   setIsTickerDropdownOpen(false);
                 }
               }}

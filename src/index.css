@@ -513,6 +513,18 @@ main {
   text-transform: uppercase;
 }
 
+.options-apr-weekday-badge {
+  margin-left: auto;
+  border-radius: 999px;
+  background: #52647a;
+  padding: 2px 7px;
+  color: white;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 .options-apr-selection-actions {
   display: flex;
   flex-wrap: wrap;

@@ -140,6 +140,11 @@ function isThirdFriday(expiration: string) {
   return expirationDate.getUTCDay() === 5 && dayOfMonth >= 15 && dayOfMonth <= 21;
 }
 
+function getNonFridayWeekdayLabel(expiration: string) {
+  const weekday = new Date(`${expiration}T00:00:00Z`).getUTCDay();
+  return (["", "Monday", "Tuesday", "Wednesday", "Thursday"] as const)[weekday] || null;
+}
+
 function getDefaultExpirations(expirationDates: string[]) {
   return expirationDates.slice(0, 5);
 }
@@ -904,6 +909,10 @@ function OptionsAprPage() {
                 {isFriday(expiration) ? (
                   <span className="options-apr-friday-badge">
                     {isThirdFriday(expiration) ? "3rd Friday" : "Friday"}
+                  </span>
+                ) : getNonFridayWeekdayLabel(expiration) ? (
+                  <span className="options-apr-weekday-badge">
+                    {getNonFridayWeekdayLabel(expiration)}
                   </span>
                 ) : null}
               </label>

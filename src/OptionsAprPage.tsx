@@ -401,22 +401,27 @@ function OptionsAprPage() {
         area && x >= area.left && x <= area.right && y >= area.top && y <= area.bottom,
       );
     };
-    const clearTooltipIfEmpty = (event: MouseEvent | PointerEvent) => {
+    const clearTooltipAtEmptyPoint = (point: { x: number; y: number }) => {
       const chart = chartRef.current;
-      const point = chartCoordinates(event);
       if (!chart || !point || !isInsideChart(point.x, point.y)) {
         return;
       }
-      const nearbyPoints = chart.getElementsAtEventForMode(
-        event,
-        "nearest",
-        { intersect: true, axis: "xy" },
-        false,
+      const isNearVisiblePoint = chart.getSortedVisibleDatasetMetas().some((metadata) =>
+        metadata.data.some((element) => {
+          const location = element.getProps(["x", "y"], true) as { x: number; y: number };
+          return Math.hypot(location.x - point.x, location.y - point.y) <= 20;
+        }),
       );
-      if (nearbyPoints.length === 0) {
+      if (!isNearVisiblePoint) {
         chart.setActiveElements([]);
         chart.tooltip?.setActiveElements([], point);
-        chart.draw();
+        chart.update("none");
+      }
+    };
+    const clearTooltipIfEmpty = (event: MouseEvent | PointerEvent) => {
+      const point = chartCoordinates(event);
+      if (point) {
+        clearTooltipAtEmptyPoint(point);
       }
     };
     const handlePointerDown = (event: PointerEvent) => {
@@ -492,12 +497,23 @@ function OptionsAprPage() {
       // browsers that synthesize a click after touch/pointer events.
       clearTooltipIfEmpty(event);
     };
+    const handleTouchEnd = (event: TouchEvent) => {
+      const touch = event.changedTouches[0];
+      const bounds = canvas?.getBoundingClientRect();
+      if (touch && bounds) {
+        clearTooltipAtEmptyPoint({
+          x: touch.clientX - bounds.left,
+          y: touch.clientY - bounds.top,
+        });
+      }
+    };
 
     canvas?.addEventListener("pointerdown", handlePointerDown);
     canvas?.addEventListener("pointermove", handlePointerMove);
     canvas?.addEventListener("pointerup", handlePointerUp);
     canvas?.addEventListener("pointercancel", handlePointerUp);
     canvas?.addEventListener("click", handleCanvasClick);
+    canvas?.addEventListener("touchend", handleTouchEnd);
 
     return () => {
       canvas?.removeEventListener("pointerdown", handlePointerDown);
@@ -505,6 +521,7 @@ function OptionsAprPage() {
       canvas?.removeEventListener("pointerup", handlePointerUp);
       canvas?.removeEventListener("pointercancel", handlePointerUp);
       canvas?.removeEventListener("click", handleCanvasClick);
+      canvas?.removeEventListener("touchend", handleTouchEnd);
       chartRef.current?.destroy();
       chartRef.current = null;
     };

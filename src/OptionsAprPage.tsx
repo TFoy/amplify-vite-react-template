@@ -9,7 +9,9 @@ import {
   deleteNonFavoriteOptionsAprHistory,
   deleteOptionsAprHistory,
   listOptionsAprHistory,
+  listOptionsAprHistoryTickers,
   loadOptionsAprHistory,
+  rememberOptionsAprTicker,
   saveOptionsAprHistory,
   setOptionsAprHistoryFavorite,
   type OptionsAprHistoryRecord,
@@ -191,6 +193,8 @@ function OptionsAprPage() {
   const [history, setHistory] = useState<OptionsAprHistoryRecord[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [knownTickers, setKnownTickers] = useState<string[]>([]);
+  const [isTickerDropdownOpen, setIsTickerDropdownOpen] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -210,6 +214,10 @@ function OptionsAprPage() {
     () => parsePercentSetting(minimumProbabilityInput),
     [minimumProbabilityInput],
   );
+  const matchingTickers = useMemo(() => {
+    const prefix = normalizeTicker(symbol);
+    return knownTickers.filter((ticker) => !prefix || ticker.startsWith(prefix));
+  }, [knownTickers, symbol]);
 
   useEffect(() => {
     if (!user) {
@@ -217,6 +225,16 @@ function OptionsAprPage() {
       return;
     }
     void loadLastTicker("options-apr").then((ticker) => setSymbol(ticker ?? ""));
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setKnownTickers([]);
+      return;
+    }
+    void listOptionsAprHistoryTickers()
+      .then(setKnownTickers)
+      .catch(() => setKnownTickers([]));
   }, [user]);
 
   useEffect(() => {
@@ -367,7 +385,7 @@ function OptionsAprPage() {
     });
 
     const canvas = canvasRef.current;
-    const chartCoordinates = (event: PointerEvent) => {
+    const chartCoordinates = (event: MouseEvent | PointerEvent) => {
       const bounds = canvas?.getBoundingClientRect();
       return bounds ? { x: event.clientX - bounds.left, y: event.clientY - bounds.top } : null;
     };
@@ -377,23 +395,30 @@ function OptionsAprPage() {
         area && x >= area.left && x <= area.right && y >= area.top && y <= area.bottom,
       );
     };
-    const handlePointerDown = (event: PointerEvent) => {
+    const clearTooltipIfEmpty = (event: MouseEvent | PointerEvent) => {
+      const chart = chartRef.current;
       const point = chartCoordinates(event);
-      if (!canvas || !point || !isInsideChart(point.x, point.y)) {
+      if (!chart || !point || !isInsideChart(point.x, point.y)) {
         return;
       }
-      const chart = chartRef.current;
-      const nearbyPoints = chart?.getElementsAtEventForMode(
+      const nearbyPoints = chart.getElementsAtEventForMode(
         event,
         "nearest",
         { intersect: true, axis: "xy" },
         false,
       );
-      if (chart && nearbyPoints?.length === 0) {
+      if (nearbyPoints.length === 0) {
         chart.setActiveElements([]);
         chart.tooltip?.setActiveElements([], point);
         chart.draw();
       }
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      const point = chartCoordinates(event);
+      if (!canvas || !point || !isInsideChart(point.x, point.y)) {
+        return;
+      }
+      clearTooltipIfEmpty(event);
       canvas.setPointerCapture(event.pointerId);
       dragZoomRef.current = {
         startX: point.x,
@@ -423,6 +448,7 @@ function OptionsAprPage() {
       if (!chart || !drag) {
         return;
       }
+      clearTooltipIfEmpty(event);
       if (
         Math.abs(drag.currentX - drag.startX) < 10 ||
         Math.abs(drag.currentY - drag.startY) < 10
@@ -455,17 +481,24 @@ function OptionsAprPage() {
         chart.update();
       }
     };
+    const handleCanvasClick = (event: MouseEvent) => {
+      // Runs after Chart.js's click processing, which is important for mobile
+      // browsers that synthesize a click after touch/pointer events.
+      clearTooltipIfEmpty(event);
+    };
 
     canvas?.addEventListener("pointerdown", handlePointerDown);
     canvas?.addEventListener("pointermove", handlePointerMove);
     canvas?.addEventListener("pointerup", handlePointerUp);
     canvas?.addEventListener("pointercancel", handlePointerUp);
+    canvas?.addEventListener("click", handleCanvasClick);
 
     return () => {
       canvas?.removeEventListener("pointerdown", handlePointerDown);
       canvas?.removeEventListener("pointermove", handlePointerMove);
       canvas?.removeEventListener("pointerup", handlePointerUp);
       canvas?.removeEventListener("pointercancel", handlePointerUp);
+      canvas?.removeEventListener("click", handleCanvasClick);
       chartRef.current?.destroy();
       chartRef.current = null;
     };
@@ -611,6 +644,8 @@ function OptionsAprPage() {
     setExDividendDate(result.exDividendDate);
     setSelectedExpirations(getDefaultExpirations(result.expirationDates));
     await saveLastTicker("options-apr", result.symbol);
+    await rememberOptionsAprTicker(result.symbol);
+    await refreshKnownTickers();
     return result;
   }
 
@@ -665,6 +700,10 @@ function OptionsAprPage() {
   async function refreshHistory(ticker: string) {
     const records = await listOptionsAprHistory(ticker);
     setHistory(records);
+  }
+
+  async function refreshKnownTickers() {
+    setKnownTickers(await listOptionsAprHistoryTickers());
   }
 
   async function handleLoadHistory(record: OptionsAprHistoryRecord) {
@@ -825,6 +864,7 @@ function OptionsAprPage() {
       });
       setSelectedHistoryId(savedHistory.id);
       await refreshHistory(tickerToLoad);
+      await refreshKnownTickers();
       setProgress("");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to retrieve option chains.");
@@ -845,13 +885,53 @@ function OptionsAprPage() {
           </p>
         </div>
         <form className="options-apr-symbol-form" onSubmit={handleLoadExpirations}>
-          <input
-            aria-label="Ticker symbol"
-            onChange={(event) => setSymbol(event.target.value)}
-            placeholder="Ticker (e.g., MU)"
-            type="text"
-            value={symbol}
-          />
+          <div className="options-apr-ticker-combobox">
+            <input
+              aria-autocomplete="list"
+              aria-controls="options-apr-ticker-list"
+              aria-expanded={isTickerDropdownOpen}
+              aria-label="Ticker symbol"
+              autoComplete="off"
+              onBlur={() => window.setTimeout(() => setIsTickerDropdownOpen(false), 120)}
+              onChange={(event) => {
+                setSymbol(event.target.value);
+                setIsTickerDropdownOpen(true);
+              }}
+              onFocus={() => setIsTickerDropdownOpen(true)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setIsTickerDropdownOpen(false);
+                }
+              }}
+              placeholder="Ticker (e.g., MU)"
+              role="combobox"
+              type="text"
+              value={symbol}
+            />
+            {isTickerDropdownOpen && matchingTickers.length > 0 ? (
+              <div
+                className="options-apr-ticker-list"
+                id="options-apr-ticker-list"
+                role="listbox"
+              >
+                {matchingTickers.map((ticker) => (
+                  <button
+                    aria-selected={normalizeTicker(symbol) === ticker}
+                    key={ticker}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setSymbol(ticker);
+                      setIsTickerDropdownOpen(false);
+                    }}
+                    role="option"
+                    type="button"
+                  >
+                    {ticker}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <button disabled={isLoadingExpirations || isLoadingChains} type="submit">
             {isLoadingExpirations ? "Retrieving..." : "Get Expiration Dates"}
           </button>

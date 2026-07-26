@@ -324,7 +324,7 @@ function OptionsAprPage() {
         maintainAspectRatio: false,
         parsing: false,
         normalized: true,
-        interaction: { intersect: false, mode: "nearest", axis: "xy" },
+        interaction: { intersect: true, mode: "nearest", axis: "xy" },
         plugins: {
           legend: { position: "bottom" },
           title: {
@@ -381,6 +381,18 @@ function OptionsAprPage() {
       const point = chartCoordinates(event);
       if (!canvas || !point || !isInsideChart(point.x, point.y)) {
         return;
+      }
+      const chart = chartRef.current;
+      const nearbyPoints = chart?.getElementsAtEventForMode(
+        event,
+        "nearest",
+        { intersect: true, axis: "xy" },
+        false,
+      );
+      if (chart && nearbyPoints?.length === 0) {
+        chart.setActiveElements([]);
+        chart.tooltip?.setActiveElements([], point);
+        chart.draw();
       }
       canvas.setPointerCapture(event.pointerId);
       dragZoomRef.current = {
@@ -539,6 +551,7 @@ function OptionsAprPage() {
           borderDash: optionType === "put" ? [7, 4] : undefined,
           pointRadius: data.map((point) => (isHighlighted(point) ? 6 : 1.5)),
           pointHoverRadius: data.map((point) => (isHighlighted(point) ? 8 : 5)),
+          pointHitRadius: 14,
           pointBackgroundColor: data.map((point) => (isHighlighted(point) ? "#facc15" : color)),
           pointBorderColor: data.map((point) => (isHighlighted(point) ? "#713f12" : color)),
           pointBorderWidth: data.map((point) => (isHighlighted(point) ? 2 : 1)),

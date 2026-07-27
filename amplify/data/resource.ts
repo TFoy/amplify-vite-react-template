@@ -62,6 +62,7 @@ const schema = a.schema({
       underlyingPrice: a.float().required(),
       expirationDate: a.string().required(),
       daysToExpiration: a.integer().required(),
+      marketDataDate: a.string(),
       callsJson: a.string().required(),
       putsJson: a.string().required(),
     })

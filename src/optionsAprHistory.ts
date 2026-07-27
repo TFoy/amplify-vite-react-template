@@ -142,6 +142,7 @@ export async function saveOptionsAprHistory(input: {
         underlyingPrice: chain.underlyingPrice,
         expirationDate: chain.expirationDate,
         daysToExpiration: chain.daysToExpiration,
+        marketDataDate: chain.marketDataDate,
         callsJson: JSON.stringify(chain.calls),
         putsJson: JSON.stringify(chain.puts),
       });
@@ -181,6 +182,7 @@ export async function loadOptionsAprHistory(record: OptionsAprHistoryRecord) {
       underlyingPrice: chain.underlyingPrice,
       expirationDate: chain.expirationDate,
       daysToExpiration: chain.daysToExpiration,
+      marketDataDate: chain.marketDataDate ?? null,
       calls: JSON.parse(chain.callsJson) as ChainResult["calls"],
       puts: JSON.parse(chain.putsJson) as ChainResult["puts"],
     }))

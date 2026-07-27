@@ -35,6 +35,7 @@ export type ChainResult = {
   underlyingPrice: number;
   expirationDate: string;
   daysToExpiration: number;
+  marketDataDate: string | null;
   calls: OptionRow[];
   puts: OptionRow[];
 };
@@ -1231,6 +1232,9 @@ function OptionsAprPage() {
       {chains.map((chain) => (
         <section className="skew-panel" key={chain.expirationDate}>
           <h2>{chain.expirationDate} · {chain.daysToExpiration} days</h2>
+          {chain.marketDataDate ? (
+            <p>Market data date used for APR: {chain.marketDataDate}</p>
+          ) : null}
           <div className="skew-table-wrap">
             <table className="skew-table options-apr-table">
               <thead>

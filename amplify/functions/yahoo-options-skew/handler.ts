@@ -167,6 +167,52 @@ function calendarDaysToExpiration(expiration: Date, retrievalDate?: Date) {
   return Math.max(1, Math.round((expiration.getTime() - calculationDate.getTime()) / 86_400_000));
 }
 
+function dateAtUtcMidnightInTimeZone(value: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((candidate) => candidate.type === type)?.value;
+  const year = part("year");
+  const month = part("month");
+  const day = part("day");
+  return year && month && day ? new Date(`${year}-${month}-${day}T00:00:00Z`) : null;
+}
+
+function rollWeekendBackToFriday(value: Date) {
+  const adjusted = new Date(value);
+  const weekday = adjusted.getUTCDay();
+  if (weekday === 6) {
+    adjusted.setUTCDate(adjusted.getUTCDate() - 1);
+  } else if (weekday === 0) {
+    adjusted.setUTCDate(adjusted.getUTCDate() - 2);
+  }
+  return adjusted;
+}
+
+function getMarketDataDate(result: OptionsResult, retrievalDate?: Date) {
+  const quote = result.quote as Record<string, unknown>;
+  const quoteTimestamp = [
+    quote.regularMarketTime,
+    quote.postMarketTime,
+    quote.preMarketTime,
+  ].find((value): value is Date => value instanceof Date && !Number.isNaN(value.getTime()));
+  if (quoteTimestamp) {
+    const marketDate = dateAtUtcMidnightInTimeZone(quoteTimestamp, "America/New_York");
+    if (marketDate) {
+      return marketDate;
+    }
+  }
+
+  const now = new Date();
+  const fallbackDate =
+    retrievalDate ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return rollWeekendBackToFriday(fallbackDate);
+}
+
 function summarizeAprOption(
   option: CallOrPut,
   optionType: "call" | "put",
@@ -213,12 +259,14 @@ function buildAprChain(
     throw new Error("Yahoo did not return a usable option chain or underlying price.");
   }
 
-  const daysToExpiration = calendarDaysToExpiration(chain.expirationDate, retrievalDate);
+  const marketDataDate = getMarketDataDate(result, retrievalDate);
+  const daysToExpiration = calendarDaysToExpiration(chain.expirationDate, marketDataDate);
   return {
     companyName: getCompanyName(result),
     underlyingPrice,
     expirationDate: toDateOnly(chain.expirationDate),
     daysToExpiration,
+    marketDataDate: toDateOnly(marketDataDate),
     calls:
       requestedOptionType === "put"
         ? []

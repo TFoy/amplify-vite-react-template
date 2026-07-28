@@ -624,19 +624,9 @@ main {
 .options-apr-chart-wrap {
   height: 520px;
   margin-top: 18px;
-  cursor: grab;
+  cursor: crosshair;
   touch-action: none;
   user-select: none;
-}
-
-.options-apr-chart-wrap.is-rectangle-zoom {
-  cursor: crosshair;
-}
-
-.options-apr-chart-actions button.is-active {
-  background: #1e6fb8;
-  border-color: #1e6fb8;
-  color: white;
 }
 
 .options-apr-chart-actions {

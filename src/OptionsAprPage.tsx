@@ -199,6 +199,7 @@ function OptionsAprPage() {
   const [isLoadingExpirations, setIsLoadingExpirations] = useState(false);
   const [isLoadingChains, setIsLoadingChains] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
+  const [isRectangleZoomEnabled, setIsRectangleZoomEnabled] = useState(false);
   const [minimumAprInput, setMinimumAprInput] = useState("25");
   const [minimumProbabilityInput, setMinimumProbabilityInput] = useState("90");
   const [history, setHistory] = useState<OptionsAprHistoryRecord[]>([]);
@@ -210,6 +211,14 @@ function OptionsAprPage() {
   const [error, setError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartRef = useRef<Chart<"line"> | null>(null);
+  const rectangleZoomEnabledRef = useRef(false);
+  const rectangleDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
   const underlyingPriceRef = useRef<number | null>(null);
   const thresholdsLoadedRef = useRef(false);
 
@@ -361,13 +370,30 @@ function OptionsAprPage() {
         ctx.restore();
       },
     };
-    const wheelModifierKey = /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
-      ? "meta"
-      : "ctrl";
+    const rectangleSelectionPlugin: Plugin<"line"> = {
+      id: "rectangleSelection",
+      afterDraw(chart) {
+        const selection = rectangleDragRef.current;
+        if (!selection) {
+          return;
+        }
+        const left = Math.min(selection.startX, selection.currentX);
+        const top = Math.min(selection.startY, selection.currentY);
+        const width = Math.abs(selection.currentX - selection.startX);
+        const height = Math.abs(selection.currentY - selection.startY);
+        chart.ctx.save();
+        chart.ctx.fillStyle = "rgba(30, 111, 184, 0.16)";
+        chart.ctx.strokeStyle = "rgba(30, 111, 184, 0.9)";
+        chart.ctx.lineWidth = 1;
+        chart.ctx.fillRect(left, top, width, height);
+        chart.ctx.strokeRect(left, top, width, height);
+        chart.ctx.restore();
+      },
+    };
 
     chartRef.current = new Chart(context, {
       type: "line",
-      plugins: [currentPricePlugin],
+      plugins: [currentPricePlugin, rectangleSelectionPlugin],
       data: { datasets: [] },
       options: {
         responsive: true,
@@ -392,10 +418,17 @@ function OptionsAprPage() {
               mode: "xy",
               wheel: {
                 enabled: true,
-                modifierKey: wheelModifierKey,
                 speed: 0.08,
               },
               pinch: { enabled: true },
+              drag: {
+                enabled: true,
+                modifierKey: "shift",
+                threshold: 10,
+                backgroundColor: "rgba(30, 111, 184, 0.16)",
+                borderColor: "rgba(30, 111, 184, 0.9)",
+                borderWidth: 1,
+              },
               onZoomComplete: () => setIsZoomed(true),
             },
           },
@@ -439,6 +472,7 @@ function OptionsAprPage() {
     });
 
     const canvas = canvasRef.current;
+    const activePointers = new Set<number>();
     const chartCoordinates = (event: MouseEvent | PointerEvent) => {
       const bounds = canvas?.getBoundingClientRect();
       return bounds ? { x: event.clientX - bounds.left, y: event.clientY - bounds.top } : null;
@@ -472,8 +506,71 @@ function OptionsAprPage() {
         clearTooltipAtEmptyPoint(point);
       }
     };
+    const cancelRectangleSelection = () => {
+      rectangleDragRef.current = null;
+      chartRef.current?.draw();
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      activePointers.add(event.pointerId);
+      if (activePointers.size > 1) {
+        cancelRectangleSelection();
+        return;
+      }
+      const point = chartCoordinates(event);
+      if (!rectangleZoomEnabledRef.current || !point || !isInsideChart(point.x, point.y)) {
+        return;
+      }
+      rectangleDragRef.current = {
+        pointerId: event.pointerId,
+        startX: point.x,
+        startY: point.y,
+        currentX: point.x,
+        currentY: point.y,
+      };
+      canvas?.setPointerCapture(event.pointerId);
+      chartRef.current?.draw();
+    };
+    const handlePointerMove = (event: PointerEvent) => {
+      const selection = rectangleDragRef.current;
+      const area = chartRef.current?.chartArea;
+      const point = chartCoordinates(event);
+      if (!selection || selection.pointerId !== event.pointerId || !area || !point) {
+        return;
+      }
+      selection.currentX = Math.min(Math.max(point.x, area.left), area.right);
+      selection.currentY = Math.min(Math.max(point.y, area.top), area.bottom);
+      chartRef.current?.draw();
+    };
     const handlePointerUp = (event: PointerEvent) => {
+      activePointers.delete(event.pointerId);
+      const selection = rectangleDragRef.current;
+      if (selection?.pointerId === event.pointerId) {
+        const width = Math.abs(selection.currentX - selection.startX);
+        const height = Math.abs(selection.currentY - selection.startY);
+        if (width >= 10 && height >= 10) {
+          chartRef.current?.zoomRect(
+            {
+              x: Math.min(selection.startX, selection.currentX),
+              y: Math.min(selection.startY, selection.currentY),
+            },
+            {
+              x: Math.max(selection.startX, selection.currentX),
+              y: Math.max(selection.startY, selection.currentY),
+            },
+            "none",
+          );
+          setIsZoomed(true);
+        }
+        cancelRectangleSelection();
+        return;
+      }
       clearTooltipIfEmpty(event);
+    };
+    const handlePointerCancel = (event: PointerEvent) => {
+      activePointers.delete(event.pointerId);
+      if (rectangleDragRef.current?.pointerId === event.pointerId) {
+        cancelRectangleSelection();
+      }
     };
     const handleCanvasClick = (event: MouseEvent) => {
       // Runs after Chart.js's click processing, which is important for mobile
@@ -491,18 +588,34 @@ function OptionsAprPage() {
       }
     };
 
+    canvas?.addEventListener("pointerdown", handlePointerDown);
+    canvas?.addEventListener("pointermove", handlePointerMove);
     canvas?.addEventListener("pointerup", handlePointerUp);
+    canvas?.addEventListener("pointercancel", handlePointerCancel);
     canvas?.addEventListener("click", handleCanvasClick);
     canvas?.addEventListener("touchend", handleTouchEnd);
 
     return () => {
+      canvas?.removeEventListener("pointerdown", handlePointerDown);
+      canvas?.removeEventListener("pointermove", handlePointerMove);
       canvas?.removeEventListener("pointerup", handlePointerUp);
+      canvas?.removeEventListener("pointercancel", handlePointerCancel);
       canvas?.removeEventListener("click", handleCanvasClick);
       canvas?.removeEventListener("touchend", handleTouchEnd);
       chartRef.current?.destroy();
       chartRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    rectangleZoomEnabledRef.current = isRectangleZoomEnabled;
+    const chart = chartRef.current;
+    const pan = chart?.options.plugins?.zoom?.pan;
+    if (chart && pan) {
+      pan.enabled = !isRectangleZoomEnabled;
+      chart.update("none");
+    }
+  }, [isRectangleZoomEnabled]);
 
   useEffect(() => {
     underlyingPriceRef.current = underlyingPrice;
@@ -1059,8 +1172,8 @@ function OptionsAprPage() {
           <div>
             <h2>Simple APR vs. Strike</h2>
             <p>
-              Solid lines are calls; dashed lines are puts. Use Ctrl/Command + wheel or pinch to
-              zoom, and drag to pan.
+              Solid lines are calls; dashed lines are puts. Use the wheel or pinch to zoom and
+              drag to pan. Shift+drag on desktop, or enable Rectangle zoom, to select a region.
             </p>
           </div>
           <div className="options-apr-chart-actions">
@@ -1073,9 +1186,19 @@ function OptionsAprPage() {
             <button disabled={!isZoomed} onClick={resetChartZoom} type="button">
               Reset zoom
             </button>
+            <button
+              aria-pressed={isRectangleZoomEnabled}
+              className={isRectangleZoomEnabled ? "is-active" : undefined}
+              onClick={() => setIsRectangleZoomEnabled((enabled) => !enabled)}
+              type="button"
+            >
+              Rectangle zoom: {isRectangleZoomEnabled ? "On" : "Off"}
+            </button>
           </div>
         </div>
-        <div className="options-apr-chart-wrap">
+        <div
+          className={`options-apr-chart-wrap${isRectangleZoomEnabled ? " is-rectangle-zoom" : ""}`}
+        >
           <canvas ref={canvasRef} />
         </div>
         <div className="options-apr-thresholds">

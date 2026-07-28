@@ -16,7 +16,12 @@ import {
   setOptionsAprHistoryFavorite,
   type OptionsAprHistoryRecord,
 } from "./optionsAprHistory";
-import { loadLastTicker, saveLastTicker } from "./userPreferences";
+import {
+  loadLastTicker,
+  loadOptionsAprThresholds,
+  saveLastTicker,
+  saveOptionsAprThresholds,
+} from "./userPreferences";
 
 type OptionRow = {
   contractSymbol: string;
@@ -94,6 +99,7 @@ const CHART_COLORS = [
   "#be185d",
 ];
 const YAHOO_REQUEST_DELAY_MS = 800;
+const THRESHOLD_SAVE_DELAY_MS = 500;
 
 function sleep(delayMs: number) {
   return new Promise((resolve) => window.setTimeout(resolve, delayMs));
@@ -210,6 +216,7 @@ function OptionsAprPage() {
   const chartRef = useRef<Chart<"line"> | null>(null);
   const underlyingPriceRef = useRef<number | null>(null);
   const dragZoomRef = useRef<DragZoom | null>(null);
+  const thresholdsLoadedRef = useRef(false);
 
   const apiBaseUrl = useMemo(() => {
     const custom = (outputs as AmplifyCustomOutputs).custom;
@@ -237,10 +244,42 @@ function OptionsAprPage() {
   useEffect(() => {
     if (!user) {
       setSymbol("");
+      setMinimumAprInput("25");
+      setMinimumProbabilityInput("90");
+      thresholdsLoadedRef.current = false;
       return;
     }
     void loadLastTicker("options-apr").then((ticker) => setSymbol(ticker ?? ""));
+    void loadOptionsAprThresholds("options-apr")
+      .then((settings) => {
+        setMinimumAprInput(settings.minimumSimpleApr);
+        setMinimumProbabilityInput(settings.minimumProbability);
+        thresholdsLoadedRef.current = true;
+      })
+      .catch(() => {
+        thresholdsLoadedRef.current = true;
+      });
   }, [user]);
+
+  useEffect(() => {
+    if (!user || !thresholdsLoadedRef.current) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void saveOptionsAprThresholds(
+        "options-apr",
+        minimumAprInput,
+        minimumProbabilityInput,
+      ).catch((saveError: unknown) => {
+        setError(
+          saveError instanceof Error
+            ? saveError.message
+            : "Unable to save the APR threshold settings.",
+        );
+      });
+    }, THRESHOLD_SAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [minimumAprInput, minimumProbabilityInput, user]);
 
   useEffect(() => {
     if (!user) {

@@ -38,3 +38,33 @@ export async function saveLastTicker(pageKey: string, lastTicker: string) {
     lastTicker,
   });
 }
+
+export async function loadOptionsAprThresholds(pageKey: string) {
+  const preference = await findPreference(pageKey);
+  return {
+    minimumSimpleApr: preference?.optionsAprMinimumSimpleApr ?? "25",
+    minimumProbability: preference?.optionsAprMinimumProbability ?? "90",
+  };
+}
+
+export async function saveOptionsAprThresholds(
+  pageKey: string,
+  minimumSimpleApr: string,
+  minimumProbability: string,
+) {
+  const preference = await findPreference(pageKey);
+  if (!preference) {
+    await client.models.UserPreference.create({
+      pageKey,
+      optionsAprMinimumSimpleApr: minimumSimpleApr,
+      optionsAprMinimumProbability: minimumProbability,
+    });
+    return;
+  }
+
+  await client.models.UserPreference.update({
+    id: preference.id,
+    optionsAprMinimumSimpleApr: minimumSimpleApr,
+    optionsAprMinimumProbability: minimumProbability,
+  });
+}

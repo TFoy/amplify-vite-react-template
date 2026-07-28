@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Chart } from "chart.js/auto";
 import type { Plugin } from "chart.js";
+import zoomPlugin from "chartjs-plugin-zoom";
 import { useAuthenticator } from "@aws-amplify/ui-react";
 import outputs from "../amplify_outputs.json";
 import { getAuthHeaders } from "./auth";
@@ -22,6 +23,8 @@ import {
   saveLastTicker,
   saveOptionsAprThresholds,
 } from "./userPreferences";
+
+Chart.register(zoomPlugin);
 
 type OptionRow = {
   contractSymbol: string;
@@ -76,13 +79,6 @@ type ChartPoint = {
   strike: number;
   midpoint: number | null;
   probabilityExpiresWorthless: number | null;
-};
-
-type DragZoom = {
-  startX: number;
-  startY: number;
-  currentX: number;
-  currentY: number;
 };
 
 export type RequestedOptionType = "both" | "call" | "put";
@@ -215,7 +211,6 @@ function OptionsAprPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartRef = useRef<Chart<"line"> | null>(null);
   const underlyingPriceRef = useRef<number | null>(null);
-  const dragZoomRef = useRef<DragZoom | null>(null);
   const thresholdsLoadedRef = useRef(false);
 
   const apiBaseUrl = useMemo(() => {
@@ -366,30 +361,13 @@ function OptionsAprPage() {
         ctx.restore();
       },
     };
-
-    const dragZoomPlugin: Plugin<"line"> = {
-      id: "drag-zoom-selection",
-      afterDraw(chart) {
-        const drag = dragZoomRef.current;
-        if (!drag) {
-          return;
-        }
-        const left = Math.min(drag.startX, drag.currentX);
-        const top = Math.min(drag.startY, drag.currentY);
-        const width = Math.abs(drag.currentX - drag.startX);
-        const height = Math.abs(drag.currentY - drag.startY);
-        chart.ctx.save();
-        chart.ctx.fillStyle = "rgba(37, 99, 235, 0.14)";
-        chart.ctx.strokeStyle = "rgba(37, 99, 235, 0.9)";
-        chart.ctx.fillRect(left, top, width, height);
-        chart.ctx.strokeRect(left, top, width, height);
-        chart.ctx.restore();
-      },
-    };
+    const wheelModifierKey = /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
+      ? "meta"
+      : "ctrl";
 
     chartRef.current = new Chart(context, {
       type: "line",
-      plugins: [currentPricePlugin, dragZoomPlugin],
+      plugins: [currentPricePlugin],
       data: { datasets: [] },
       options: {
         responsive: true,
@@ -399,6 +377,28 @@ function OptionsAprPage() {
         interaction: { intersect: true, mode: "nearest", axis: "xy" },
         plugins: {
           legend: { position: "bottom" },
+          zoom: {
+            limits: {
+              x: { min: "original", max: "original" },
+              y: { min: "original", max: "original" },
+            },
+            pan: {
+              enabled: true,
+              mode: "xy",
+              threshold: 8,
+              onPanComplete: () => setIsZoomed(true),
+            },
+            zoom: {
+              mode: "xy",
+              wheel: {
+                enabled: true,
+                modifierKey: wheelModifierKey,
+                speed: 0.08,
+              },
+              pinch: { enabled: true },
+              onZoomComplete: () => setIsZoomed(true),
+            },
+          },
           title: {
             display: false,
             text: [],
@@ -472,73 +472,8 @@ function OptionsAprPage() {
         clearTooltipAtEmptyPoint(point);
       }
     };
-    const handlePointerDown = (event: PointerEvent) => {
-      const point = chartCoordinates(event);
-      if (!canvas || !point || !isInsideChart(point.x, point.y)) {
-        return;
-      }
-      clearTooltipIfEmpty(event);
-      canvas.setPointerCapture(event.pointerId);
-      dragZoomRef.current = {
-        startX: point.x,
-        startY: point.y,
-        currentX: point.x,
-        currentY: point.y,
-      };
-    };
-    const handlePointerMove = (event: PointerEvent) => {
-      const drag = dragZoomRef.current;
-      const point = chartCoordinates(event);
-      const area = chartRef.current?.chartArea;
-      if (!drag || !point || !area) {
-        return;
-      }
-      drag.currentX = Math.min(Math.max(point.x, area.left), area.right);
-      drag.currentY = Math.min(Math.max(point.y, area.top), area.bottom);
-      chartRef.current?.draw();
-    };
     const handlePointerUp = (event: PointerEvent) => {
-      const chart = chartRef.current;
-      const drag = dragZoomRef.current;
-      dragZoomRef.current = null;
-      if (canvas?.hasPointerCapture(event.pointerId)) {
-        canvas.releasePointerCapture(event.pointerId);
-      }
-      if (!chart || !drag) {
-        return;
-      }
       clearTooltipIfEmpty(event);
-      if (
-        Math.abs(drag.currentX - drag.startX) < 10 ||
-        Math.abs(drag.currentY - drag.startY) < 10
-      ) {
-        chart.draw();
-        return;
-      }
-
-      const xValues = [
-        chart.scales.x.getValueForPixel(drag.startX),
-        chart.scales.x.getValueForPixel(drag.currentX),
-      ];
-      const yValues = [
-        chart.scales.y.getValueForPixel(drag.startY),
-        chart.scales.y.getValueForPixel(drag.currentY),
-      ];
-      const xOptions = chart.options.scales?.x;
-      const yOptions = chart.options.scales?.y;
-      if (
-        xOptions &&
-        yOptions &&
-        xValues.every((value): value is number => typeof value === "number") &&
-        yValues.every((value): value is number => typeof value === "number")
-      ) {
-        xOptions.min = Math.min(...xValues);
-        xOptions.max = Math.max(...xValues);
-        yOptions.min = Math.min(...yValues);
-        yOptions.max = Math.max(...yValues);
-        setIsZoomed(true);
-        chart.update();
-      }
     };
     const handleCanvasClick = (event: MouseEvent) => {
       // Runs after Chart.js's click processing, which is important for mobile
@@ -556,18 +491,12 @@ function OptionsAprPage() {
       }
     };
 
-    canvas?.addEventListener("pointerdown", handlePointerDown);
-    canvas?.addEventListener("pointermove", handlePointerMove);
     canvas?.addEventListener("pointerup", handlePointerUp);
-    canvas?.addEventListener("pointercancel", handlePointerUp);
     canvas?.addEventListener("click", handleCanvasClick);
     canvas?.addEventListener("touchend", handleTouchEnd);
 
     return () => {
-      canvas?.removeEventListener("pointerdown", handlePointerDown);
-      canvas?.removeEventListener("pointermove", handlePointerMove);
       canvas?.removeEventListener("pointerup", handlePointerUp);
-      canvas?.removeEventListener("pointercancel", handlePointerUp);
       canvas?.removeEventListener("click", handleCanvasClick);
       canvas?.removeEventListener("touchend", handleTouchEnd);
       chartRef.current?.destroy();
@@ -606,18 +535,11 @@ function OptionsAprPage() {
 
   function resetChartZoom() {
     const chart = chartRef.current;
-    const xOptions = chart?.options.scales?.x;
-    const yOptions = chart?.options.scales?.y;
-    if (!chart || !xOptions || !yOptions) {
+    if (!chart) {
       return;
     }
-    xOptions.min = undefined;
-    xOptions.max = undefined;
-    yOptions.min = undefined;
-    yOptions.max = undefined;
-    dragZoomRef.current = null;
+    chart.resetZoom("none");
     setIsZoomed(false);
-    chart.update();
   }
 
   useEffect(() => {
@@ -1137,8 +1059,8 @@ function OptionsAprPage() {
           <div>
             <h2>Simple APR vs. Strike</h2>
             <p>
-              Solid lines are calls; dashed lines are puts. Hover for details, or drag a rectangle
-              over the plot to zoom.
+              Solid lines are calls; dashed lines are puts. Use Ctrl/Command + wheel or pinch to
+              zoom, and drag to pan.
             </p>
           </div>
           <div className="options-apr-chart-actions">

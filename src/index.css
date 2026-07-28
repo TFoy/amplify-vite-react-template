@@ -624,7 +624,7 @@ main {
 .options-apr-chart-wrap {
   height: 520px;
   margin-top: 18px;
-  cursor: crosshair;
+  cursor: grab;
   touch-action: none;
   user-select: none;
 }

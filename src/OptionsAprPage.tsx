@@ -80,6 +80,7 @@ type ChartPoint = {
 
 export type RequestedOptionType = "both" | "call" | "put";
 export type RequestedStrikeRange = "otm" | "all";
+type CallAprBasis = "currentPrice" | "strikePrice";
 
 const CHART_COLORS = [
   "#2563eb",
@@ -115,6 +116,19 @@ function formatCurrency(value: number | null) {
 
 function formatPercent(value: number | null) {
   return value === null ? "--" : `${(value * 100).toFixed(2)}%`;
+}
+
+function getSimpleApr(option: OptionRow, chain: ChainResult, callAprBasis: CallAprBasis) {
+  if (option.midpoint === null || chain.daysToExpiration <= 0) {
+    return null;
+  }
+  const collateral =
+    option.optionType === "put" || callAprBasis === "strikePrice"
+      ? option.strike
+      : chain.underlyingPrice;
+  return collateral > 0
+    ? (option.midpoint / collateral) * (365 / chain.daysToExpiration)
+    : null;
 }
 
 function formatHistoryDate(value: string) {
@@ -192,6 +206,7 @@ function OptionsAprPage() {
   const [selectedExpirations, setSelectedExpirations] = useState<string[]>([]);
   const [requestedOptionType, setRequestedOptionType] = useState<RequestedOptionType>("both");
   const [requestedStrikeRange, setRequestedStrikeRange] = useState<RequestedStrikeRange>("otm");
+  const [callAprBasis, setCallAprBasis] = useState<CallAprBasis>("currentPrice");
   const [chains, setChains] = useState<ChainResult[]>([]);
   const [isLoadingExpirations, setIsLoadingExpirations] = useState(false);
   const [isLoadingChains, setIsLoadingChains] = useState(false);
@@ -627,10 +642,11 @@ function OptionsAprPage() {
       return (["call", "put"] as const).flatMap((optionType) => {
         const options = optionType === "call" ? chain.calls : chain.puts;
         const data: ChartPoint[] = options
-          .filter((option) => option.simpleApr !== null)
-          .map((option) => ({
+          .map((option) => ({ option, simpleApr: getSimpleApr(option, chain, callAprBasis) }))
+          .filter((entry) => entry.simpleApr !== null)
+          .map(({ option, simpleApr }) => ({
             x: option.strike,
-            y: (option.simpleApr ?? 0) * 100,
+            y: (simpleApr ?? 0) * 100,
             expirationDate: chain.expirationDate,
             optionType,
             strike: option.strike,
@@ -661,7 +677,7 @@ function OptionsAprPage() {
       });
     });
     chart.update();
-  }, [chains, minimumApr, minimumProbability]);
+  }, [callAprBasis, chains, minimumApr, minimumProbability]);
 
   async function fetchJson<T>(url: string): Promise<T> {
     const response = await fetch(url, { headers: await getAuthHeaders() });
@@ -1117,6 +1133,19 @@ function OptionsAprPage() {
                 <option value="all">All strikes</option>
               </select>
             </label>
+            <label>
+              Call APR basis
+              <select
+                aria-label="Call APR collateral basis"
+                disabled={isLoadingChains}
+                onChange={(event) => setCallAprBasis(event.target.value as CallAprBasis)}
+                title="Choose the collateral used for call APR: the current share price models buying or holding shares now; the strike price measures premium relative to the option's exercise value. Put APR always uses strike price."
+                value={callAprBasis}
+              >
+                <option value="currentPrice">Current share price</option>
+                <option value="strikePrice">Strike price</option>
+              </select>
+            </label>
             <button
               disabled={isLoadingChains || selectedExpirations.length === 0}
               onClick={() => void loadSelectedChains()}
@@ -1181,7 +1210,7 @@ function OptionsAprPage() {
           </p>
         </div>
         <p className="options-apr-method-note">
-          Put APR uses strike as cash collateral. Call APR uses the current share price as covered-call collateral.
+          Put APR uses strike as cash collateral. Call APR uses the {callAprBasis === "strikePrice" ? "strike price" : "current share price"} as covered-call collateral.
           Yahoo chain requests are sequential with an {YAHOO_REQUEST_DELAY_MS} ms delay between expirations.
           Probability is a Black–Scholes risk-neutral estimate using Yahoo implied volatility and zero interest/dividend rates; it is not a forecast.
         </p>
@@ -1286,7 +1315,7 @@ function OptionsAprPage() {
                     <td>{formatCurrency(option.bid)}</td>
                     <td>{formatCurrency(option.ask)}</td>
                     <td>{formatCurrency(option.midpoint)}</td>
-                    <td>{formatPercent(option.simpleApr)}</td>
+                    <td>{formatPercent(getSimpleApr(option, chain, callAprBasis))}</td>
                     <td>{formatPercent(option.probabilityExpiresWorthless)}</td>
                   </tr>
                 ))}

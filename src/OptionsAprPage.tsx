@@ -1133,19 +1133,6 @@ function OptionsAprPage() {
                 <option value="all">All strikes</option>
               </select>
             </label>
-            <label>
-              Call APR basis
-              <select
-                aria-label="Call APR collateral basis"
-                disabled={isLoadingChains}
-                onChange={(event) => setCallAprBasis(event.target.value as CallAprBasis)}
-                title="Choose the collateral used for call APR: the current share price models buying or holding shares now; the strike price measures premium relative to the option's exercise value. Put APR always uses strike price."
-                value={callAprBasis}
-              >
-                <option value="currentPrice">Current share price</option>
-                <option value="strikePrice">Strike price</option>
-              </select>
-            </label>
             <button
               disabled={isLoadingChains || selectedExpirations.length === 0}
               onClick={() => void loadSelectedChains()}
@@ -1167,6 +1154,18 @@ function OptionsAprPage() {
             </p>
           </div>
           <div className="options-apr-chart-actions">
+            <label className="options-apr-chart-basis">
+              Call APR basis
+              <select
+                aria-label="Call APR collateral basis"
+                onChange={(event) => setCallAprBasis(event.target.value as CallAprBasis)}
+                title="Recalculate the chart from the loaded option data. Current share price uses the underlying price as covered-call collateral; strike price uses each option's strike. Put APR always uses strike price."
+                value={callAprBasis}
+              >
+                <option value="currentPrice">Current share price</option>
+                <option value="strikePrice">Strike price</option>
+              </select>
+            </label>
             {underlyingPrice !== null ? (
               <div className="skew-value">
                 <span>Underlying</span>

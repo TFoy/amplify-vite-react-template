@@ -652,6 +652,11 @@ main {
   color: #172033;
 }
 
+.options-apr-basis-row {
+  display: flex;
+  margin-top: 12px;
+}
+
 .options-apr-thresholds {
   display: grid;
   grid-template-columns: repeat(2, minmax(180px, 260px)) minmax(220px, 1fr);

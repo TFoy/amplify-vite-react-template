@@ -17,6 +17,7 @@ const schema = a.schema({
       lastTicker: a.string(),
       optionsAprMinimumSimpleApr: a.string(),
       optionsAprMinimumProbability: a.string(),
+      optionsAprCallAprBasis: a.string(),
     })
     .authorization((allow) => [allow.owner()]),
   OptionsTrackerRecord: a

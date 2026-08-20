@@ -260,6 +260,7 @@ function OptionsAprPage() {
       setSymbol("");
       setMinimumAprInput("25");
       setMinimumProbabilityInput("90");
+      setCallAprBasis("currentPrice");
       thresholdsLoadedRef.current = false;
       return;
     }
@@ -268,6 +269,7 @@ function OptionsAprPage() {
       .then((settings) => {
         setMinimumAprInput(settings.minimumSimpleApr);
         setMinimumProbabilityInput(settings.minimumProbability);
+        setCallAprBasis(settings.callAprBasis);
         thresholdsLoadedRef.current = true;
       })
       .catch(() => {
@@ -284,6 +286,7 @@ function OptionsAprPage() {
         "options-apr",
         minimumAprInput,
         minimumProbabilityInput,
+        callAprBasis,
       ).catch((saveError: unknown) => {
         setError(
           saveError instanceof Error
@@ -293,7 +296,7 @@ function OptionsAprPage() {
       });
     }, THRESHOLD_SAVE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [minimumAprInput, minimumProbabilityInput, user]);
+  }, [callAprBasis, minimumAprInput, minimumProbabilityInput, user]);
 
   useEffect(() => {
     if (!user) {
@@ -1154,18 +1157,6 @@ function OptionsAprPage() {
             </p>
           </div>
           <div className="options-apr-chart-actions">
-            <label className="options-apr-chart-basis">
-              Call APR basis
-              <select
-                aria-label="Call APR collateral basis"
-                onChange={(event) => setCallAprBasis(event.target.value as CallAprBasis)}
-                title="Recalculate the chart from the loaded option data. Current share price uses the underlying price as covered-call collateral; strike price uses each option's strike. Put APR always uses strike price."
-                value={callAprBasis}
-              >
-                <option value="currentPrice">Current share price</option>
-                <option value="strikePrice">Strike price</option>
-              </select>
-            </label>
             {underlyingPrice !== null ? (
               <div className="skew-value">
                 <span>Underlying</span>
@@ -1207,6 +1198,20 @@ function OptionsAprPage() {
           <p className="options-apr-highlight-key">
             <span aria-hidden="true" /> Gold points meet both minimums.
           </p>
+        </div>
+        <div className="options-apr-basis-row">
+          <label className="options-apr-chart-basis">
+            Call APR basis
+            <select
+              aria-label="Call APR collateral basis"
+              onChange={(event) => setCallAprBasis(event.target.value as CallAprBasis)}
+              title="Recalculate the chart from the loaded option data. Current share price uses the underlying price as covered-call collateral; strike price uses each option's strike. Put APR always uses strike price."
+              value={callAprBasis}
+            >
+              <option value="currentPrice">Current share price</option>
+              <option value="strikePrice">Strike price</option>
+            </select>
+          </label>
         </div>
         <p className="options-apr-method-note">
           Put APR uses strike as cash collateral. Call APR uses the {callAprBasis === "strikePrice" ? "strike price" : "current share price"} as covered-call collateral.

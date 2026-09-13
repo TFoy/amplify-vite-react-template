@@ -4,6 +4,7 @@ import type { Plugin } from "chart.js";
 import { useAuthenticator } from "@aws-amplify/ui-react";
 import outputs from "../amplify_outputs.json";
 import { getAuthHeaders } from "./auth";
+import { excludeAprOutliers } from "./optionsAprOutliers";
 import {
   deleteAllOptionsAprHistory,
   deleteNonFavoriteOptionsAprHistory,
@@ -207,6 +208,7 @@ function OptionsAprPage() {
   const [requestedOptionType, setRequestedOptionType] = useState<RequestedOptionType>("both");
   const [requestedStrikeRange, setRequestedStrikeRange] = useState<RequestedStrikeRange>("otm");
   const [callAprBasis, setCallAprBasis] = useState<CallAprBasis>("currentPrice");
+  const [excludeOutliers, setExcludeOutliers] = useState(false);
   const [chains, setChains] = useState<ChainResult[]>([]);
   const [isLoadingExpirations, setIsLoadingExpirations] = useState(false);
   const [isLoadingChains, setIsLoadingChains] = useState(false);
@@ -261,6 +263,7 @@ function OptionsAprPage() {
       setMinimumAprInput("25");
       setMinimumProbabilityInput("90");
       setCallAprBasis("currentPrice");
+      setExcludeOutliers(false);
       thresholdsLoadedRef.current = false;
       return;
     }
@@ -270,6 +273,7 @@ function OptionsAprPage() {
         setMinimumAprInput(settings.minimumSimpleApr);
         setMinimumProbabilityInput(settings.minimumProbability);
         setCallAprBasis(settings.callAprBasis);
+        setExcludeOutliers(settings.excludeOutliers);
         thresholdsLoadedRef.current = true;
       })
       .catch(() => {
@@ -287,6 +291,7 @@ function OptionsAprPage() {
         minimumAprInput,
         minimumProbabilityInput,
         callAprBasis,
+        excludeOutliers,
       ).catch((saveError: unknown) => {
         setError(
           saveError instanceof Error
@@ -296,7 +301,7 @@ function OptionsAprPage() {
       });
     }, THRESHOLD_SAVE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [callAprBasis, minimumAprInput, minimumProbabilityInput, user]);
+  }, [callAprBasis, excludeOutliers, minimumAprInput, minimumProbabilityInput, user]);
 
   useEffect(() => {
     if (!user) {
@@ -644,7 +649,7 @@ function OptionsAprPage() {
       const color = CHART_COLORS[index % CHART_COLORS.length];
       return (["call", "put"] as const).flatMap((optionType) => {
         const options = optionType === "call" ? chain.calls : chain.puts;
-        const data: ChartPoint[] = options
+        const points: ChartPoint[] = options
           .map((option) => ({ option, simpleApr: getSimpleApr(option, chain, callAprBasis) }))
           .filter((entry) => entry.simpleApr !== null)
           .map(({ option, simpleApr }) => ({
@@ -656,6 +661,9 @@ function OptionsAprPage() {
             midpoint: option.midpoint,
             probabilityExpiresWorthless: option.probabilityExpiresWorthless,
           }));
+        const data = excludeOutliers
+          ? excludeAprOutliers(points, optionType, chain.underlyingPrice)
+          : points;
         const isHighlighted = (point: ChartPoint) =>
           minimumApr !== null &&
           minimumProbability !== null &&
@@ -680,7 +688,7 @@ function OptionsAprPage() {
       });
     });
     chart.update();
-  }, [callAprBasis, chains, minimumApr, minimumProbability]);
+  }, [callAprBasis, chains, excludeOutliers, minimumApr, minimumProbability]);
 
   async function fetchJson<T>(url: string): Promise<T> {
     const response = await fetch(url, { headers: await getAuthHeaders() });
@@ -1213,6 +1221,14 @@ function OptionsAprPage() {
             </select>
           </label>
         </div>
+        <label className="options-apr-exclude-outliers">
+          <input
+            checked={excludeOutliers}
+            onChange={(event) => setExcludeOutliers(event.target.checked)}
+            type="checkbox"
+          />
+          Exclude outliers
+        </label>
         <p className="options-apr-method-note">
           Put APR uses strike as cash collateral. Call APR uses the {callAprBasis === "strikePrice" ? "strike price" : "current share price"} as covered-call collateral.
           Yahoo chain requests are sequential with an {YAHOO_REQUEST_DELAY_MS} ms delay between expirations.

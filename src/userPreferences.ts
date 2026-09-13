@@ -44,6 +44,7 @@ export async function loadOptionsAprThresholds(pageKey: string) {
   return {
     minimumSimpleApr: preference?.optionsAprMinimumSimpleApr ?? "25",
     minimumProbability: preference?.optionsAprMinimumProbability ?? "90",
+    excludeOutliers: preference?.optionsAprExcludeOutliers ?? false,
     callAprBasis:
       preference?.optionsAprCallAprBasis === "strikePrice"
         ? ("strikePrice" as const)
@@ -56,6 +57,7 @@ export async function saveOptionsAprThresholds(
   minimumSimpleApr: string,
   minimumProbability: string,
   callAprBasis: "currentPrice" | "strikePrice",
+  excludeOutliers: boolean,
 ) {
   const preference = await findPreference(pageKey);
   if (!preference) {
@@ -64,6 +66,7 @@ export async function saveOptionsAprThresholds(
       optionsAprMinimumSimpleApr: minimumSimpleApr,
       optionsAprMinimumProbability: minimumProbability,
       optionsAprCallAprBasis: callAprBasis,
+      optionsAprExcludeOutliers: excludeOutliers,
     });
     return;
   }
@@ -73,5 +76,6 @@ export async function saveOptionsAprThresholds(
     optionsAprMinimumSimpleApr: minimumSimpleApr,
     optionsAprMinimumProbability: minimumProbability,
     optionsAprCallAprBasis: callAprBasis,
+    optionsAprExcludeOutliers: excludeOutliers,
   });
 }

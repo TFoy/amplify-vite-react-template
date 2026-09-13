@@ -657,6 +657,16 @@ main {
   margin-top: 12px;
 }
 
+.options-apr-exclude-outliers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: #536173;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
 .options-apr-thresholds {
   display: grid;
   grid-template-columns: repeat(2, minmax(180px, 260px)) minmax(220px, 1fr);

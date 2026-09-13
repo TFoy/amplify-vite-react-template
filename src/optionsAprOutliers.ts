@@ -6,14 +6,15 @@ export function excludeAprOutliers<T extends AprPoint>(
   optionType: "call" | "put",
   underlyingPrice: number,
 ): T[] {
+  const isOutOfTheMoney = (point: T) => optionType === "put"
+    ? point.x < underlyingPrice
+    : point.x > underlyingPrice;
   return points.filter((point) => {
-    const inTheMoney = optionType === "put"
-      ? point.x > underlyingPrice
-      : point.x < underlyingPrice;
-    if (!inTheMoney || !Number.isFinite(point.y) || point.y <= 0) {
+    if (!isOutOfTheMoney(point) || !Number.isFinite(point.y) || point.y <= 0) {
       return true;
     }
     return !points.some((other) =>
+      isOutOfTheMoney(other) &&
       (optionType === "put" ? other.x > point.x : other.x < point.x) &&
       Number.isFinite(other.y) && other.y >= 0 &&
       point.y >= 10 * other.y,

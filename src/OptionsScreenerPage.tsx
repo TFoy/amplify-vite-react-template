@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RequestedOptionType, RequestedStrikeRange } from "./OptionsAprPage";
 import { DEFAULT_SCREENER_SETTINGS, type ScreenerSettings } from "./optionsScreenerSettings";
-import { parseTickers, scanOptions, selectRows, validTicker, type Progress, type RequestJson, type ScreenerRow, type SortColumn } from "./optionsScreener";
+import { parseTickers, promoteSort, scanOptions, selectRows, validTicker, type Progress, type RequestJson, type ScreenerRow, type SortColumn, type SortRule } from "./optionsScreener";
 
 const columns: { key: SortColumn; label: string }[] = [
   { key: "ticker", label: "Ticker" }, { key: "type", label: "Type" },
   { key: "expiration", label: "Expiration date" }, { key: "strike", label: "Strike price" },
-  { key: "apr", label: "APR" }, { key: "exercise", label: "Chance of exercise" },
+  { key: "apr", label: "APR" }, { key: "probabilityWorthless", label: "Exp w/o exercise" },
   { key: "midpoint", label: "Midpoint premium" },
 ];
 const percent = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(2)}%`;
@@ -35,7 +35,7 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
   const [progress, setProgress] = useState<Progress | null>(null);
   const [status, setStatus] = useState<"idle" | "running" | "complete" | "cancelled">("idle");
   const [startedAt, setStartedAt] = useState<Date | null>(null);
-  const [sort, setSort] = useState<{ column: SortColumn; descending: boolean }>({ column: "apr", descending: true });
+  const [sort, setSort] = useState<SortRule[]>([{ column: "apr", descending: true }]);
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(1);
   const controller = useRef<AbortController | null>(null);
@@ -47,7 +47,7 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
   const expirationLimit = firstExpirations.trim() === "" ? undefined : Number(firstExpirations);
   const expirationLimitValid = expirationLimit === undefined || (Number.isSafeInteger(expirationLimit) && expirationLimit >= 1);
   const filtered = useMemo(() => thresholdsValid
-    ? selectRows(rows, Number(minimumApr), Number(minimumProbability), sort.column, sort.descending, excludeOutliers)
+    ? selectRows(rows, Number(minimumApr), Number(minimumProbability), sort, excludeOutliers)
     : [], [rows, minimumApr, minimumProbability, sort, thresholdsValid, excludeOutliers]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -142,12 +142,17 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
       {!thresholdsValid && <p role="alert" className="skew-error">Enter an APR of at least 0 and a probability between 0 and 100.</p>}
       <p>{filtered.length.toLocaleString()} matching options out of {rows.length.toLocaleString()} retrieved{running ? " · Results are still arriving." : "."}</p>
       <div className="skew-table-wrap"><table className="skew-table">
-        <thead><tr>{columns.map(({ key, label }) => <th key={key} aria-sort={sort.column === key ? sort.descending ? "descending" : "ascending" : "none"}>
-          <button type="button" onClick={() => { setSort({ column: key, descending: sort.column === key ? !sort.descending : key === "apr" }); setPage(1); }}>{label}{sort.column === key ? sort.descending ? " ▼" : " ▲" : ""}</button>
-        </th>)}</tr></thead>
+        <caption>Sorted by {sort.map((rule) => `${columns.find((column) => column.key === rule.column)?.label} (${rule.descending ? "descending" : "ascending"})`).join(", then ")}. Click a column to make it primary; click the primary column again to reverse it.</caption>
+        <thead><tr>{columns.map(({ key, label }) => {
+          const priority = sort.findIndex((rule) => rule.column === key);
+          const rule = sort[priority];
+          return <th key={key} aria-sort={priority === 0 ? rule.descending ? "descending" : "ascending" : undefined}>
+            <button type="button" onClick={() => { setSort((current) => promoteSort(current, key)); setPage(1); }}>{label}{rule ? ` ${rule.descending ? "▼" : "▲"} ${priority + 1}` : ""}</button>
+          </th>;
+        })}</tr></thead>
         <tbody>{visibleRows.map((row) => <tr key={`${row.ticker}:${row.expiration}:${row.type}:${row.contractSymbol}`}>
           <td>{row.ticker}</td><td>{row.type}</td><td>{row.expiration}</td><td>{currency(row.strike)}</td>
-          <td>{percent(row.apr)}</td><td>{percent(row.exercise)}</td><td>{currency(row.midpoint)}</td>
+          <td>{percent(row.apr)}</td><td>{percent(row.probabilityWorthless)}</td><td>{currency(row.midpoint)}</td>
         </tr>)}{!visibleRows.length && <tr><td colSpan={7}>{status === "idle" ? "Choose tickers and click Run to retrieve options." : "No retrieved options match both minimums."}</td></tr>}</tbody>
       </table></div>
       <nav className="screener-pagination" aria-label="Results pages">
@@ -158,7 +163,7 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
         <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button>
         <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(pageCount)}>Last</button>
       </nav>
-      <p className="options-apr-method-note">APR uses midpoint premium, annualized against strike collateral for puts and current share price for calls, as in the APR Explorer. This is a premium-selling metric, not an expected return from buying an option. Midpoint premium is per share. Chance of exercise is 100% minus the estimated probability of expiring without exercise; the Black–Scholes estimate does not model early exercise. Options missing APR or probability are omitted from matches.</p>
+      <p className="options-apr-method-note">APR uses midpoint premium, annualized against strike collateral for puts and current share price for calls, as in the APR Explorer. This is a premium-selling metric, not an expected return from buying an option. Midpoint premium is per share. Exp w/o exercise is the estimated probability of expiring without exercise, matching the minimum filter; the Black–Scholes estimate does not model early exercise. Options missing APR or probability are omitted from matches.</p>
     </section>
   </main>;
 }

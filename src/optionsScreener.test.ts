@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import type { ChainResult } from "./OptionsAprPage";
 import { DEFAULT_SCREENER_SETTINGS, parseScreenerSettings } from "./optionsScreenerSettings";
-import { chainRows, createScreenerRequest, parseTickers, scanOptions, selectRows, validTicker, waitForYahoo, type Progress, type RequestJson, type ScreenerRow } from "./optionsScreener";
+import { chainRows, createScreenerRequest, parseTickers, promoteSort, scanOptions, selectRows, validTicker, waitForYahoo, type Progress, type RequestJson, type ScreenerRow } from "./optionsScreener";
 
 function chain(expirationDate = "2027-01-15"): ChainResult {
   const option = { contractSymbol: "TEST-C", optionType: "call" as const, strike: 100, bid: 1, ask: 3, midpoint: 2, simpleApr: 0.25, impliedVolatility: 0.3, probabilityExpiresWorthless: 0.9 };
@@ -24,19 +24,48 @@ test("tickers normalize and deduplicate without silently rewriting invalid symbo
   assert.equal(validTicker("BAD/TICKER"), false);
 });
 
-test("thresholds are inclusive percentages, exercise is complementary, and every column sorts", () => {
+test("thresholds are inclusive percentages, displayed probability matches the filter, and every column sorts", () => {
   const rows = chainRows("TEST", chain());
-  assert.ok(Math.abs(rows[0].exercise! - 0.1) < 1e-10);
-  assert.equal(selectRows(rows, 25, 90, "apr", true).length, 2);
-  assert.equal(selectRows(rows, 26, 90, "apr", true)[0].type, "put");
-  assert.equal(selectRows(rows, 0, 91, "apr", true).length, 0);
-  assert.equal(selectRows([...rows, { ...rows[0], apr: null }, { ...rows[0], probabilityWorthless: null }], 0, 0, "apr", true).length, 2);
-  const higher = { ...rows[0], ticker: "ZZZ", type: "put" as const, expiration: "2028-01-01", strike: 200, apr: 0.8, exercise: 0.2, midpoint: 10 };
-  for (const column of ["ticker", "type", "expiration", "strike", "apr", "exercise", "midpoint"] as const) {
-    assert.equal(selectRows([rows[0], higher], 0, 0, column, true)[0], higher);
-    assert.equal(selectRows([rows[0], higher], 0, 0, column, false)[0], rows[0]);
+  assert.equal(rows[0].probabilityWorthless, 0.9);
+  assert.equal(selectRows(rows, 25, 90, [{ column: "apr", descending: true }]).length, 2);
+  assert.equal(selectRows(rows, 26, 90, [{ column: "apr", descending: true }])[0].type, "put");
+  assert.equal(selectRows(rows, 0, 91, [{ column: "apr", descending: true }]).length, 0);
+  assert.equal(selectRows([...rows, { ...rows[0], apr: null }, { ...rows[0], probabilityWorthless: null }], 0, 0, [{ column: "apr", descending: true }]).length, 2);
+  const higher = { ...rows[0], ticker: "ZZZ", type: "put" as const, expiration: "2028-01-01", strike: 200, apr: 0.8, probabilityWorthless: 0.95, midpoint: 10 };
+  for (const column of ["ticker", "type", "expiration", "strike", "apr", "probabilityWorthless", "midpoint"] as const) {
+    assert.equal(selectRows([rows[0], higher], 0, 0, [{ column, descending: true }])[0], higher);
+    assert.equal(selectRows([rows[0], higher], 0, 0, [{ column, descending: false }])[0], rows[0]);
   }
   assert.equal(rows[0].type, "call", "sorting must not mutate retrieved rows");
+});
+
+test("new primary sort preserves previous priorities and directions within each group", () => {
+  const base = chainRows("TEST", chain())[0];
+  const rows = [
+    { ...base, contractSymbol: "put-low", type: "put" as const, apr: 0.3 },
+    { ...base, contractSymbol: "call-low", apr: 0.2 },
+    { ...base, contractSymbol: "put-high", type: "put" as const, apr: 0.8 },
+    { ...base, contractSymbol: "call-high", apr: 0.6 },
+  ];
+  const rules = promoteSort([{ column: "apr", descending: true }], "type");
+  assert.deepEqual(rules, [{ column: "type", descending: false }, { column: "apr", descending: true }]);
+  assert.deepEqual(selectRows(rows, 0, 0, rules).map((row) => row.contractSymbol), ["call-high", "call-low", "put-high", "put-low"]);
+  const reversed = promoteSort(rules, "type");
+  assert.deepEqual(selectRows(rows, 0, 0, reversed).map((row) => row.contractSymbol), ["put-high", "put-low", "call-high", "call-low"]);
+  const third = promoteSort(reversed, "ticker");
+  assert.deepEqual(third.map((rule) => rule.column), ["ticker", "type", "apr"]);
+  assert.deepEqual(promoteSort(third, "apr"), [
+    { column: "apr", descending: true }, { column: "ticker", descending: false }, { column: "type", descending: true },
+  ]);
+  assert.equal(rows[0].contractSymbol, "put-low");
+});
+
+test("missing primary values use secondary sorting and stay last in either direction", () => {
+  const base = chainRows("TEST", chain())[0];
+  const rows = [{ ...base, midpoint: null, apr: 0.2 }, { ...base, midpoint: 5 }, { ...base, midpoint: null, apr: 0.8 }];
+  for (const descending of [true, false]) {
+    assert.deepEqual(selectRows(rows, 0, 0, [{ column: "midpoint", descending }, { column: "apr", descending: true }]), [rows[1], rows[2], rows[0]]);
+  }
 });
 
 test("scan retrieves all expirations sequentially, pauses across ticker boundaries, and reports completion", async () => {
@@ -159,8 +188,8 @@ test("outliers use OTM-only directional comparisons before thresholds, without d
   ];
   const rows = chainRows("INTC", data);
   assert.deepEqual(rows.filter((row) => row.isOutlier).map((row) => row.contractSymbol), ["CALL-OUTLIER", "PUT-OUTLIER"]);
-  assert.equal(selectRows(rows, 25, 90, "apr", true, true).length, 2);
-  assert.equal(selectRows(rows, 25, 90, "apr", true, false).length, 4);
+  assert.equal(selectRows(rows, 25, 90, [{ column: "apr", descending: true }], true).length, 2);
+  assert.equal(selectRows(rows, 25, 90, [{ column: "apr", descending: true }], false).length, 4);
   assert.equal(rows.length, 6);
   // Separate ticker/expiration chains never become comparison points.
   const isolated = { ...data, calls: [data.calls[1]], puts: [] };

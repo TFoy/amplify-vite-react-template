@@ -9,11 +9,18 @@ export type ScreenerRow = {
   strike: number;
   apr: number | null;
   probabilityWorthless: number | null;
-  exercise: number | null;
   midpoint: number | null;
   isOutlier: boolean;
 };
-export type SortColumn = "ticker" | "type" | "expiration" | "strike" | "apr" | "exercise" | "midpoint";
+export type SortColumn = "ticker" | "type" | "expiration" | "strike" | "apr" | "probabilityWorthless" | "midpoint";
+export type SortRule = { column: SortColumn; descending: boolean };
+
+export function promoteSort(rules: readonly SortRule[], column: SortColumn): SortRule[] {
+  const previous = rules.find((rule) => rule.column === column);
+  const descending = rules[0]?.column === column
+    ? !rules[0].descending : previous?.descending ?? column === "apr";
+  return [{ column, descending }, ...rules.filter((rule) => rule.column !== column)];
+}
 export type Progress = { total: number; processed: number; retrieved: number; ticker: string; expiration: string; chain: number; chains: number };
 export type RequestJson = <T>(path: string, signal: AbortSignal) => Promise<T>;
 
@@ -42,24 +49,27 @@ export function chainRows(ticker: string, chain: ChainResult): ScreenerRow[] {
       ticker, contractSymbol: option.contractSymbol, type: option.optionType,
       expiration: chain.expirationDate, strike: option.strike,
       apr: finite(option.simpleApr), probabilityWorthless,
-      exercise: probabilityWorthless === null ? null : 1 - probabilityWorthless,
       midpoint: finite(option.midpoint),
       isOutlier: outliers.has(option.contractSymbol),
     };
   });
 }
 
-export function selectRows(rows: ScreenerRow[], minimumApr: number, minimumProbability: number, column: SortColumn, descending: boolean, excludeOutliers = false) {
+export function selectRows(rows: ScreenerRow[], minimumApr: number, minimumProbability: number, rules: readonly SortRule[], excludeOutliers = false) {
   return rows.filter((row) => (!excludeOutliers || !row.isOutlier) && row.apr !== null && row.probabilityWorthless !== null &&
     row.apr * 100 >= minimumApr && row.probabilityWorthless * 100 >= minimumProbability)
     .sort((a, b) => {
-      const left = a[column];
-      const right = b[column];
-      if (left === null) return right === null ? 0 : 1;
-      if (right === null) return -1;
-      const comparison = typeof left === "number" && typeof right === "number"
-        ? left - right : String(left).localeCompare(String(right));
-      return (descending ? -comparison : comparison) || a.contractSymbol.localeCompare(b.contractSymbol);
+      for (const { column, descending } of rules) {
+        const left = a[column];
+        const right = b[column];
+        if (left === null && right === null) continue;
+        if (left === null) return 1;
+        if (right === null) return -1;
+        const comparison = typeof left === "number" && typeof right === "number"
+          ? left - right : String(left).localeCompare(String(right));
+        if (comparison) return descending ? -comparison : comparison;
+      }
+      return 0;
     });
 }
 

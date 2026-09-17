@@ -11,9 +11,9 @@ function chain(expirationDate = "2027-01-15"): ChainResult {
   return { companyName: "Test", underlyingPrice: 100, expirationDate, daysToExpiration: 30, marketDataDate: "2026-12-16", calls: [option], puts: [{ ...option, contractSymbol: "TEST-P", optionType: "put", simpleApr: 0.5 }] };
 }
 
-test("Run preferences round-trip all controls, preserve false, and exclude ticker lists", () => {
+test("screener preferences round-trip controls and the independent ticker list", () => {
   const settings = { minimumApr: "40", minimumProbability: "85", minimumDistance: "3", maximumDistance: "15", excludeOutliers: false, excludedFlags: ["Wide spread", "Low volume"], columnOrder: [...DEFAULT_COLUMN_ORDER].reverse(), firstExpirations: "5", optionType: "put", strikeRange: "all" };
-  assert.deepEqual(parseScreenerSettings(JSON.stringify({ ...settings, tickers: ["OTHER"] })), settings);
+  assert.deepEqual(parseScreenerSettings(JSON.stringify({ ...settings, tickers: ["OTHER"] })), { ...settings, tickers: ["OTHER"] });
   assert.deepEqual(parseScreenerSettings(undefined), DEFAULT_SCREENER_SETTINGS);
   assert.deepEqual(parseScreenerSettings("broken"), DEFAULT_SCREENER_SETTINGS);
   assert.deepEqual(parseScreenerSettings("null"), DEFAULT_SCREENER_SETTINGS);
@@ -23,6 +23,16 @@ test("Run preferences round-trip all controls, preserve false, and exclude ticke
   assert.equal(parseScreenerSettings('{"maximumDistance":"-1"}').maximumDistance, "");
   assert.equal(parseScreenerSettings('{"maximumDistance":"0"}').maximumDistance, "0");
   assert.deepEqual(parseScreenerSettings(JSON.stringify({ minimumApr: "-1", minimumProbability: "101", firstExpirations: "0", optionType: "invalid" })), DEFAULT_SCREENER_SETTINGS);
+});
+
+test("saved ticker lists preserve empty lists, normalize symbols, and distinguish unsaved preferences", () => {
+  assert.equal(parseScreenerSettings("{}").tickers, null);
+  assert.deepEqual(parseScreenerSettings('{"tickers":[]}').tickers, []);
+  assert.deepEqual(parseScreenerSettings('{"tickers":[" intc ","AMZN","intc",null,"BAD/TICKER"]}').tickers, ["INTC", "AMZN"]);
+  const initial = parseScreenerSettings('{"tickers":["OWL","GOOGL"]}');
+  const edited = { ...initial, minimumApr: "30" };
+  assert.deepEqual(parseScreenerSettings(JSON.stringify(edited)).tickers, ["OWL", "GOOGL"]);
+  assert.deepEqual(parseScreenerSettings(JSON.stringify({ ...edited, tickers: [] })).tickers, []);
 });
 
 test("column moves preserve all columns and saved orders migrate without duplicates or unknown columns", () => {

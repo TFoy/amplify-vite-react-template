@@ -13,25 +13,23 @@ const apiUrl = custom.yahoo_options_skew?.api_url ?? custom.schwab?.api_url ?? "
 const request = createScreenerRequest(apiUrl, getAuthHeaders);
 
 function UserScreener({ userId }: { userId: string }) {
-  const [tickers, setTickers] = useState<string[] | null>(null);
-  const [settings, setSettings] = useState<ScreenerSettings>(DEFAULT_SCREENER_SETTINGS);
+  const [settings, setSettings] = useState<ScreenerSettings | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     let cancelled = false;
-    void Promise.allSettled([listOptionsAprHistoryTickers(), loadOptionsScreenerSettings()]).then(([tickerResult, settingsResult]) => {
-      if (cancelled) return;
-      const failures: string[] = [];
-      if (tickerResult.status === "rejected") failures.push(`Could not load default tickers: ${String(tickerResult.reason)}. Add tickers manually.`);
-      if (settingsResult.status === "rejected") failures.push(`Could not load saved Run settings: ${String(settingsResult.reason)}. Using defaults.`);
-      setError(failures.join(" "));
-      setSettings(settingsResult.status === "fulfilled" ? settingsResult.value : DEFAULT_SCREENER_SETTINGS);
-      setTickers(tickerResult.status === "fulfilled" ? tickerResult.value : []);
+    void loadOptionsScreenerSettings().then((saved) => {
+      if (!cancelled) setSettings(saved);
+    }).catch((error: unknown) => {
+      if (!cancelled) {
+        setError(`Could not load saved screener preferences: ${String(error)}. Using defaults.`);
+        setSettings(DEFAULT_SCREENER_SETTINGS);
+      }
     });
     return () => { cancelled = true; };
   }, []);
-  if (tickers === null) return <main className="skew-page"><p role="status">Loading your APR Explorer tickers…</p></main>;
+  if (settings === null) return <main className="skew-page"><p role="status">Loading your screener preferences…</p></main>;
   return <>{error && <p className="skew-error" role="alert">{error}</p>}
-    <OptionsScreenerPage defaultTickers={tickers} request={request} initialSettings={settings}
+    <OptionsScreenerPage defaultTickers={[]} request={request} initialSettings={settings} loadExplorerTickers={listOptionsAprHistoryTickers}
       onSettingsChange={(next) => saveOptionsScreenerSettings(next, userId)} /></>;
 }
 

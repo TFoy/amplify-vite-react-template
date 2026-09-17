@@ -10,13 +10,16 @@ function chain(expirationDate = "2027-01-15"): ChainResult {
 }
 
 test("Run preferences round-trip all controls, preserve false, and exclude ticker lists", () => {
-  const settings = { minimumApr: "40", minimumProbability: "85", minimumDistance: "3", excludeOutliers: false, firstExpirations: "5", optionType: "put", strikeRange: "all" };
+  const settings = { minimumApr: "40", minimumProbability: "85", minimumDistance: "3", maximumDistance: "15", excludeOutliers: false, firstExpirations: "5", optionType: "put", strikeRange: "all" };
   assert.deepEqual(parseScreenerSettings(JSON.stringify({ ...settings, tickers: ["OTHER"] })), settings);
   assert.deepEqual(parseScreenerSettings(undefined), DEFAULT_SCREENER_SETTINGS);
   assert.deepEqual(parseScreenerSettings("broken"), DEFAULT_SCREENER_SETTINGS);
   assert.deepEqual(parseScreenerSettings("null"), DEFAULT_SCREENER_SETTINGS);
   assert.equal(parseScreenerSettings('{"minimumApr":"40"}').minimumDistance, "0");
   assert.equal(parseScreenerSettings('{"minimumDistance":"-1"}').minimumDistance, "0");
+  assert.equal(parseScreenerSettings('{"minimumDistance":"3"}').maximumDistance, "");
+  assert.equal(parseScreenerSettings('{"maximumDistance":"-1"}').maximumDistance, "");
+  assert.equal(parseScreenerSettings('{"maximumDistance":"0"}').maximumDistance, "0");
   assert.deepEqual(parseScreenerSettings(JSON.stringify({ minimumApr: "-1", minimumProbability: "101", firstExpirations: "0", optionType: "invalid" })), DEFAULT_SCREENER_SETTINGS);
 });
 
@@ -33,8 +36,8 @@ test("thresholds are inclusive percentages, displayed probability matches the fi
   assert.equal(selectRows(rows, 26, 90, [{ column: "apr", descending: true }])[0].type, "put");
   assert.equal(selectRows(rows, 0, 91, [{ column: "apr", descending: true }]).length, 0);
   assert.equal(selectRows([...rows, { ...rows[0], apr: null }, { ...rows[0], probabilityWorthless: null }], 0, 0, [{ column: "apr", descending: true }]).length, 2);
-  const higher = { ...rows[0], ticker: "ZZZ", type: "put" as const, expiration: "2028-01-01", strike: 200, currentPrice: 150, distance: 1 / 3, apr: 0.8, probabilityWorthless: 0.95, midpoint: 10 };
-  for (const column of ["ticker", "type", "expiration", "strike", "currentPrice", "distance", "apr", "probabilityWorthless", "midpoint"] as const) {
+  const higher = { ...rows[0], ticker: "ZZZ", type: "put" as const, expiration: "2028-01-01", strike: 200, currentPrice: 150, distance: 1 / 3, apr: 0.8, bidApr: 0.5, flagCount: 5, probabilityWorthless: 0.95, midpoint: 10 };
+  for (const column of ["ticker", "type", "expiration", "strike", "currentPrice", "distance", "apr", "bidApr", "flagCount", "probabilityWorthless", "midpoint"] as const) {
     assert.equal(selectRows([rows[0], higher], 0, 0, [{ column, descending: true }])[0], higher);
     assert.equal(selectRows([rows[0], higher], 0, 0, [{ column, descending: false }])[0], rows[0]);
   }
@@ -63,6 +66,67 @@ test("minimum distance uses inclusive percentages and zero leaves distance unres
   assert.deepEqual(selectRows(rows, 0, 0, rules, false, 10).map((row) => row.distance), [0.1, 1.5]);
   assert.equal(selectRows(rows, 0, 0, rules, false, 0).length, 5);
   assert.equal(rows.length, 5);
+});
+
+test("maximum distance is inclusive and combines with the minimum, including exact zero", () => {
+  const base = chainRows("TEST", chain())[0];
+  const rows = [0, 0.03, 0.1, 1.5, null].map((distance) => ({ ...base, distance }));
+  assert.deepEqual(selectRows(rows, 0, 0, [], false, 3, 10).map((row) => row.distance), [0.03, 0.1]);
+  assert.deepEqual(selectRows(rows, 0, 0, [], false, 0, 0).map((row) => row.distance), [0]);
+  assert.equal(selectRows(rows, 0, 0, [], false, 0, Infinity).length, 5);
+  assert.equal(selectRows(rows, 0, 0, [], false, 10, 3).length, 0);
+});
+
+test("bid APR uses put strike and call share-price collateral, including zero and missing bids", () => {
+  const data = chain();
+  data.calls[0].strike = 110;
+  data.puts[0].strike = 90;
+  const rows = chainRows("TEST", data);
+  assert.equal(rows[0].bidApr, (1 / 100) * (365 / 30));
+  assert.equal(rows[1].bidApr, (1 / 90) * (365 / 30));
+  data.calls[0].bid = 0;
+  data.puts[0].bid = null;
+  const invalid = chainRows("TEST", data);
+  assert.equal(invalid[0].bidApr, 0);
+  assert.equal(invalid[1].bidApr, null);
+  assert.equal(chainRows("TEST", { ...data, daysToExpiration: 0 })[0].bidApr, null);
+});
+
+test("zero bids and malformed quotes are excluded, warnings alone remain, and unchecking restores rows", () => {
+  const data = chain();
+  const base = data.calls[0];
+  data.calls = [
+    { ...base, contractSymbol: "zero", bid: 0, ask: 0.05, volume: 203 },
+    { ...base, contractSymbol: "missing", bid: null },
+    { ...base, contractSymbol: "crossed", bid: 4, ask: 3 },
+    { ...base, contractSymbol: "negative", bid: -1 },
+    { ...base, contractSymbol: "warnings", bid: 0.05, ask: 0.1, volume: 2, openInterest: 10, lastTradeDate: "2026-11-01T12:00:00Z" },
+    { ...base, contractSymbol: "healthy", bid: 1, ask: 1.05 },
+  ];
+  data.puts = [];
+  const rows = chainRows("TEST", data);
+  assert.ok(rows[0].flags.some((flag) => flag.label === "No bid" && flag.exclude));
+  assert.ok(rows[4].flags.some((flag) => flag.label === "Old last trade"));
+  assert.equal(rows[4].flagCount, 4);
+  assert.equal(rows[5].flagCount, 0, "missing activity should not create low-activity warnings");
+  assert.deepEqual(selectRows(rows, 0, 0, [], true).map((row) => row.contractSymbol), ["warnings", "healthy"]);
+  assert.equal(selectRows(rows, 0, 0, [], false).length, 6);
+  assert.equal(data.calls.length, 6);
+});
+
+test("unusable and zero-APR quotes cannot cause valid points to be labeled APR outliers", () => {
+  const data = chain();
+  const base = data.puts[0];
+  data.calls = [];
+  data.puts = [
+    { ...base, contractSymbol: "valid", strike: 80, simpleApr: 1 },
+    { ...base, contractSymbol: "zero-apr", strike: 85, simpleApr: 0 },
+    { ...base, contractSymbol: "no-bid", strike: 90, bid: 0, simpleApr: 0.01 },
+    { ...base, contractSymbol: "crossed", strike: 95, bid: 4, ask: 3, simpleApr: 0.01 },
+  ];
+  const rows = chainRows("TEST", data);
+  assert.equal(rows[0].isOutlier, false);
+  assert.equal(rows[0].excludeFromResults, false);
 });
 
 test("new primary sort preserves previous priorities and directions within each group", () => {

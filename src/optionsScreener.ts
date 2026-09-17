@@ -81,10 +81,11 @@ export function chainRows(ticker: string, chain: ChainResult): ScreenerRow[] {
   });
 }
 
-export function selectRows(rows: ScreenerRow[], minimumApr: number, minimumProbability: number, rules: readonly SortRule[], excludeOutliers = false, minimumDistance = 0) {
+export function selectRows(rows: ScreenerRow[], minimumApr: number, minimumProbability: number, rules: readonly SortRule[], excludeOutliers = false, minimumDistance = 0, maximumDistance = Infinity) {
   return rows.filter((row) => (!excludeOutliers || !row.excludeFromResults) && row.apr !== null && row.probabilityWorthless !== null &&
     row.apr * 100 >= minimumApr && row.probabilityWorthless * 100 >= minimumProbability &&
-    (minimumDistance === 0 || (row.distance !== null && row.distance * 100 >= minimumDistance)))
+    ((minimumDistance === 0 && maximumDistance === Infinity) ||
+      (row.distance !== null && row.distance * 100 >= minimumDistance && row.distance * 100 <= maximumDistance)))
     .sort((a, b) => {
       for (const { column, descending } of rules) {
         const left = a[column];

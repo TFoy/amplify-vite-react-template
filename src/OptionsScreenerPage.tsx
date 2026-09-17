@@ -7,8 +7,9 @@ const columns: { key: SortColumn; label: string }[] = [
   { key: "ticker", label: "Ticker" }, { key: "type", label: "Type" },
   { key: "expiration", label: "Expiration date" }, { key: "strike", label: "Strike price" },
   { key: "currentPrice", label: "Current price" }, { key: "distance", label: "Distance" },
-  { key: "apr", label: "APR" }, { key: "probabilityWorthless", label: "Exp w/o exercise" },
+  { key: "apr", label: "APR" }, { key: "bidApr", label: "Bid APR" }, { key: "probabilityWorthless", label: "Exp w/o exercise" },
   { key: "midpoint", label: "Midpoint premium" },
+  { key: "flagCount", label: "Flags" },
 ];
 const percent = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(2)}%`;
 const currency = (value: number | null) => value === null ? "—" : value.toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -21,7 +22,7 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
   const [tickers, setTickers] = useState(defaultTickers);
   const [tickerInput, setTickerInput] = useState("");
   const [settings, setSettings] = useState(initialSettings);
-  const { minimumApr, minimumProbability, minimumDistance, excludeOutliers, firstExpirations, optionType, strikeRange } = settings;
+  const { minimumApr, minimumProbability, minimumDistance, maximumDistance, excludeOutliers, firstExpirations, optionType, strikeRange } = settings;
   const [settingsError, setSettingsError] = useState("");
   async function updateSetting<K extends keyof ScreenerSettings>(key: K, value: ScreenerSettings[K]) {
     const next = { ...settings, [key]: value };
@@ -43,14 +44,16 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
   const running = status === "running";
   useEffect(() => () => controller.current?.abort(), []);
 
+  const maximumDistanceValue = maximumDistance.trim() === "" ? Infinity : Number(maximumDistance);
   const thresholdsValid = minimumApr.trim() !== "" && Number.isFinite(Number(minimumApr)) && Number(minimumApr) >= 0 &&
     minimumProbability.trim() !== "" && Number.isFinite(Number(minimumProbability)) && Number(minimumProbability) >= 0 && Number(minimumProbability) <= 100 &&
-    minimumDistance.trim() !== "" && Number.isFinite(Number(minimumDistance)) && Number(minimumDistance) >= 0;
+    minimumDistance.trim() !== "" && Number.isFinite(Number(minimumDistance)) && Number(minimumDistance) >= 0 &&
+    (maximumDistance.trim() === "" || (Number.isFinite(maximumDistanceValue) && maximumDistanceValue >= Number(minimumDistance)));
   const expirationLimit = firstExpirations.trim() === "" ? undefined : Number(firstExpirations);
   const expirationLimitValid = expirationLimit === undefined || (Number.isSafeInteger(expirationLimit) && expirationLimit >= 1);
   const filtered = useMemo(() => thresholdsValid
-    ? selectRows(rows, Number(minimumApr), Number(minimumProbability), sort, excludeOutliers, Number(minimumDistance))
-    : [], [rows, minimumApr, minimumProbability, minimumDistance, sort, thresholdsValid, excludeOutliers]);
+    ? selectRows(rows, Number(minimumApr), Number(minimumProbability), sort, excludeOutliers, Number(minimumDistance), maximumDistanceValue)
+    : [], [rows, minimumApr, minimumProbability, minimumDistance, maximumDistanceValue, sort, thresholdsValid, excludeOutliers]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visibleRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -121,7 +124,7 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
       {tickerInput.trim() && <p>Add or clear the pending ticker symbols before running.</p>}
       {settingsError && <p role="alert" className="skew-error">{settingsError}</p>}
       {!expirationLimitValid && <p role="alert" className="skew-error">Enter a positive whole number of expirations, or leave blank for all.</p>}
-      <p className="options-apr-method-note">Leave the expiration limit blank for all dates, or enter N to retrieve the nearest N dates per ticker. Option types and strike coverage apply to the next run. Exclude outliers uses the Explorer's OTM-only 10× rule and can be toggled without retrieving again.</p>
+      <p className="options-apr-method-note">Leave the expiration limit blank for all dates, or enter N to retrieve the nearest N dates per ticker. Option types and strike coverage apply to the next run. Exclude outliers hides unusable quotes and OTM 10× APR outliers; wide spreads and activity warnings stay visible. Uncheck it to inspect excluded rows without retrieving again.</p>
       <p className="options-apr-method-note">Requests run sequentially with an 800 ms pause between requests, including between tickers.</p>
     </section>
     {progress && <section className="skew-panel" aria-label="Retrieval progress">
@@ -140,9 +143,10 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
         <label>Minimum APR (%)<input type="number" min="0" step="any" value={minimumApr} onChange={(event) => void updateSetting("minimumApr", event.target.value)} /></label>
         <label>Minimum expires without exercise (%)<input type="number" min="0" max="100" step="any" value={minimumProbability} onChange={(event) => void updateSetting("minimumProbability", event.target.value)} /></label>
         <label>Minimum distance (%)<input type="number" min="0" step="any" value={minimumDistance} onChange={(event) => void updateSetting("minimumDistance", event.target.value)} /></label>
+        <label>Maximum distance (%)<input type="number" min="0" step="any" placeholder="No limit" value={maximumDistance} onChange={(event) => void updateSetting("maximumDistance", event.target.value)} /></label>
       </div>
       <p className="options-apr-method-note">These filters update the table immediately using retrieved data. Changing them does not make any Yahoo API requests.</p>
-      {!thresholdsValid && <p role="alert" className="skew-error">Enter an APR and distance of at least 0, and a probability between 0 and 100.</p>}
+      {!thresholdsValid && <p role="alert" className="skew-error">Enter an APR and minimum distance of at least 0, and a probability between 0 and 100. Maximum distance must be at least the minimum, or blank for no limit.</p>}
       <p>{filtered.length.toLocaleString()} matching options out of {rows.length.toLocaleString()} retrieved{running ? " · Results are still arriving." : "."}</p>
       <div className="skew-table-wrap"><table className="skew-table">
         <caption>Sorted by {sort.map((rule) => `${columns.find((column) => column.key === rule.column)?.label} (${rule.descending ? "descending" : "ascending"})`).join(", then ")}. Click a column to make it primary; click the primary column again to reverse it.</caption>
@@ -156,7 +160,13 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
         <tbody>{visibleRows.map((row) => <tr key={`${row.ticker}:${row.expiration}:${row.type}:${row.contractSymbol}`}>
           <td>{row.ticker}</td><td>{row.type}</td><td>{row.expiration}</td><td>{currency(row.strike)}</td>
           <td>{currency(row.currentPrice)}</td><td>{percent(row.distance)}</td>
-          <td>{percent(row.apr)}</td><td>{percent(row.probabilityWorthless)}</td><td>{currency(row.midpoint)}</td>
+          <td>{percent(row.apr)}</td><td>{percent(row.bidApr)}</td><td>{percent(row.probabilityWorthless)}</td><td>{currency(row.midpoint)}</td>
+          <td className="screener-flags">{row.flags.length ? <details>
+            <summary>{row.flags.map((flag) => flag.label).join("; ")}</summary>
+            <ul>{row.flags.map((flag) => <li key={flag.label}><strong>{flag.exclude ? "Excluded when enabled" : "Warning only"}:</strong> {flag.detail}</li>)}</ul>
+            <p>Bid {currency(row.bid)} · Ask {currency(row.ask)} · Volume {row.volume ?? "unavailable"} · Open interest {row.openInterest ?? "unavailable"}</p>
+            <p>Last trade: {row.lastTradeDate ? new Date(row.lastTradeDate).toLocaleString() : "unavailable"}</p>
+          </details> : "—"}</td>
         </tr>)}{!visibleRows.length && <tr><td colSpan={columns.length}>{status === "idle" ? "Choose tickers and click Run to retrieve options." : "No retrieved options match the filters."}</td></tr>}</tbody>
       </table></div>
       <nav className="screener-pagination" aria-label="Results pages">
@@ -167,6 +177,7 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
         <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button>
         <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(pageCount)}>Last</button>
       </nav>
+      <p className="options-apr-method-note">Flags identify quote problems or activity warnings; click a flag to inspect details. Flags sort by count. Wide spread means over 50% of midpoint, low volume means below 10, low open interest means below 100, and old last trade means over 7 days before the market-data date. Missing activity is not treated as zero. Bid APR uses the displayed bid and the same collateral and annualization as APR; it is not a guaranteed execution price. Minimum APR continues to filter midpoint APR.</p>
       <p className="options-apr-method-note">Current price is the underlying share price returned with each chain at retrieval. Distance is the absolute difference between strike and current price, divided by current price, shown as a percentage.</p>
       <p className="options-apr-method-note">APR uses midpoint premium, annualized against strike collateral for puts and current share price for calls, as in the APR Explorer. This is a premium-selling metric, not an expected return from buying an option. Midpoint premium is per share. Exp w/o exercise is the estimated probability of expiring without exercise, matching the minimum filter; the Black–Scholes estimate does not model early exercise. Options missing APR or probability are omitted from matches.</p>
     </section>

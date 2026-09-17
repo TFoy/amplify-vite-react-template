@@ -15,9 +15,12 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
   loadExplorerTickers?: () => Promise<string[]>;
 }) {
   const [tickerInput, setTickerInput] = useState("");
+  const [tickerDraft, setTickerDraft] = useState<string | null>(null);
   const [settings, setSettings] = useState<ScreenerSettings>(() => ({ ...initialSettings, tickers: initialSettings.tickers ?? defaultTickers }));
   const settingsRef = useRef(settings);
   const tickers = settings.tickers ?? [];
+  const tickerText = tickerDraft ?? tickers.join("\n");
+  const hasTickerEdits = tickerDraft !== null && tickerDraft !== tickers.join("\n");
   const [isLoadingTickers, setIsLoadingTickers] = useState(false);
   const columns = settings.columnOrder.map((key) => SCREENER_COLUMNS.find((column) => column.key === key)!);
   const draggedColumn = useRef<SortColumn | null>(null);
@@ -67,6 +70,15 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
     setInputError("");
   }
 
+  function applyTickerText() {
+    const nextTickers = parseTickers(tickerText);
+    const invalid = nextTickers.filter((ticker) => !validTicker(ticker));
+    if (invalid.length) { setInputError(`Invalid ticker symbols: ${invalid.join(", ")}`); return; }
+    void updateSetting("tickers", nextTickers);
+    setTickerDraft(null);
+    setInputError("");
+  }
+
   async function handleLoadExplorerTickers() {
     if (!loadExplorerTickers || running || isLoadingTickers) return;
     setIsLoadingTickers(true);
@@ -81,7 +93,7 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
   }
 
   async function run() {
-    if (controller.current || isLoadingTickers || !expirationLimitValid || !tickers.length) return;
+    if (controller.current || isLoadingTickers || hasTickerEdits || !expirationLimitValid || !tickers.length) return;
     const abortController = new AbortController();
     controller.current = abortController;
     const snapshot = [...tickers];
@@ -109,16 +121,31 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
       <h2>Tickers to scan</h2>
       <p>{local ? "Your screener ticker list is saved in this browser. Importing Explorer tickers is available in the signed-in app." : "Your screener ticker list is saved independently. Use the Explorer button to replace it with your current Options APR Explorer tickers."}</p>
       <form className="screener-add" onSubmit={(event) => { event.preventDefault(); addTickers(); }}>
+        <label>Ticker view<select value={settings.tickerView} disabled={running || isLoadingTickers || hasTickerEdits || !!tickerInput.trim()} onChange={(event) => { void updateSetting("tickerView", event.target.value as "list" | "text"); setInputError(""); }}>
+          <option value="list">List</option><option value="text">Editable text</option>
+        </select></label>
+        {settings.tickerView === "list" && <>
         <label>Ticker symbols<input value={tickerInput} disabled={running || isLoadingTickers} onChange={(event) => setTickerInput(event.target.value)} placeholder="INTC, AMZN, GOOGL" /></label>
         <button type="submit" disabled={running || isLoadingTickers || !tickerInput.trim()}>Add tickers</button>
-        <button type="button" disabled={running || isLoadingTickers || !loadExplorerTickers} onClick={() => void handleLoadExplorerTickers()}>{isLoadingTickers ? "Loading Explorer tickers…" : "Use Options APR explorer tickers"}</button>
-        <button type="button" disabled={running || isLoadingTickers || !tickers.length} onClick={() => { void updateSetting("tickers", []); setInputError(""); }}>Clear all</button>
+        </>}
+        <button type="button" disabled={running || isLoadingTickers || hasTickerEdits || !loadExplorerTickers} onClick={() => void handleLoadExplorerTickers()}>{isLoadingTickers ? "Loading Explorer tickers…" : "Use Options APR explorer tickers"}</button>
+        <button type="button" disabled={running || isLoadingTickers || hasTickerEdits || !tickers.length} onClick={() => { void updateSetting("tickers", []); setTickerDraft(null); setInputError(""); }}>Clear all</button>
       </form>
       {inputError && <p role="alert" className="skew-error">{inputError}</p>}
-      <ul className="screener-tickers">{tickers.map((ticker) => <li key={ticker}>
+      {settings.tickerView === "text" ? <div className="screener-ticker-editor">
+        <label htmlFor="screener-ticker-text">Edit ticker symbols</label>
+        <textarea id="screener-ticker-text" rows={6} value={tickerText} disabled={running || isLoadingTickers}
+          aria-describedby="screener-ticker-text-help" spellCheck={false}
+          onChange={(event) => { setTickerDraft(event.target.value === tickers.join("\n") ? null : event.target.value); setInputError(""); }} />
+        <p id="screener-ticker-text-help">Separate tickers with commas, spaces, semicolons, or newlines. Apply changes to save the list; duplicates are removed. Applying empty text clears the list.</p>
+        <div className="screener-controls">
+          <button type="button" disabled={running || isLoadingTickers || !hasTickerEdits} onClick={applyTickerText}>Apply changes</button>
+          <button type="button" disabled={running || isLoadingTickers || !hasTickerEdits} onClick={() => { setTickerDraft(null); setInputError(""); }}>Discard changes</button>
+        </div>
+      </div> : <ul className="screener-tickers">{tickers.map((ticker) => <li key={ticker}>
         <button type="button" disabled={running || isLoadingTickers} aria-label={`Remove ${ticker}`} onClick={() => void updateSetting("tickers", tickers.filter((value) => value !== ticker))}>×</button>
         {ticker}
-      </li>)}</ul>
+      </li>)}</ul>}
       {!tickers.length && <p>Add at least one ticker to run the screener.</p>}
       <div className="screener-controls">
         <label>First N expirations per ticker<input type="number" min="1" step="1" placeholder="All" disabled={running} value={firstExpirations} onChange={(event) => void updateSetting("firstExpirations", event.target.value)} /></label>
@@ -131,10 +158,11 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
         <label className="screener-exclude-outliers"><input type="checkbox" checked={excludeOutliers} onChange={(event) => void updateSetting("excludeOutliers", event.target.checked)} />Exclude outliers</label>
       </div>
       <div className="screener-controls">
-        <button type="button" disabled={running || isLoadingTickers || !tickers.length || !expirationLimitValid || !!tickerInput.trim()} onClick={() => void run()}>Run</button>
+        <button type="button" disabled={running || isLoadingTickers || hasTickerEdits || !tickers.length || !expirationLimitValid || !!tickerInput.trim()} onClick={() => void run()}>Run</button>
         {running && <button type="button" onClick={() => controller.current?.abort()}>Cancel</button>}
       </div>
       {tickerInput.trim() && <p>Add or clear the pending ticker symbols before running.</p>}
+      {hasTickerEdits && <p>Apply or discard ticker edits before running or switching views.</p>}
       {settingsError && <p role="alert" className="skew-error">{settingsError}</p>}
       {!expirationLimitValid && <p role="alert" className="skew-error">Enter a positive whole number of expirations, or leave blank for all.</p>}
       <p className="options-apr-method-note">Leave the expiration limit blank for all dates, or enter N to retrieve the nearest N dates per ticker. Option types and strike coverage apply to the next run. Exclude outliers applies the flag selections in Results. Uncheck it to inspect excluded rows without retrieving again.</p>

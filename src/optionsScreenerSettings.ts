@@ -5,6 +5,7 @@ import { DEFAULT_EXCLUDED_FLAGS, QUOTE_FLAG_LABELS, type QuoteFlagLabel } from "
 
 export type ScreenerSettings = {
   tickers: string[] | null;
+  tickerView: "list" | "text";
   minimumApr: string;
   minimumProbability: string;
   minimumDistance: string;
@@ -19,6 +20,7 @@ export type ScreenerSettings = {
 
 export const DEFAULT_SCREENER_SETTINGS: ScreenerSettings = {
   tickers: null,
+  tickerView: "list",
   minimumApr: "25", minimumProbability: "90", minimumDistance: "0", maximumDistance: "", excludeOutliers: true,
   firstExpirations: "", optionType: "both", strikeRange: "otm",
   excludedFlags: DEFAULT_EXCLUDED_FLAGS,
@@ -33,6 +35,7 @@ export function parseScreenerSettings(json: string | null | undefined): Screener
   const percent = (input: unknown, fallback: string, max = Infinity) =>
     typeof input === "string" && input.trim() !== "" && Number.isFinite(Number(input)) && Number(input) >= 0 && Number(input) <= max ? input : fallback;
   return {
+    tickerView: value.tickerView === "text" ? "text" : "list",
     tickers: Array.isArray(value.tickers) ? [...new Set(value.tickers
       .filter((ticker): ticker is string => typeof ticker === "string")
       .map((ticker) => ticker.trim().toUpperCase()).filter(validTicker))] : null,

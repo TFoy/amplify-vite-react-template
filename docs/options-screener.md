@@ -29,6 +29,8 @@ Leave that running to generate `amplify_outputs.json`. In another terminal run `
 
 ## Using the screener
 
+Choose **Ticker view → Editable text** to edit the entire ticker list in a text box. Commas, spaces, semicolons, and newlines separate symbols. **Apply changes** validates, deduplicates, and saves the replacement list; empty text clears it. **Discard changes** restores the saved list. Apply or discard before running, importing, clearing, or switching views. Draft text is not saved until applied. The selected view is remembered alongside your preferences. Both views edit the same independent screener list.
+
 1. Add symbols separated by commas, spaces, or semicolons. Use × to remove a symbol. Reset restores the initial list. Changes affect this page only and do not alter APR Explorer history.
 2. The **Results** panel contains minimum APR and minimum expires without exercise, both in percent (defaults: 25 and 90). These are display filters only: they never constrain retrieval or disable Run. Adjust them during or after retrieval to update the table immediately without any Yahoo API requests.
 3. Choose **Option types** (calls and puts, puts only, or calls only) and **Strike coverage** (OTM/ATM only or all strikes). Defaults match the Explorer: calls and puts, OTM/ATM only. Enter **First N expirations per ticker** to retrieve only the nearest N available expiration dates; leave blank for all. The limit counts expiration chains, not individual contracts. Click **Run** to capture these settings and the ticker list, clear the previous results, and start retrieval. These retrieval controls are locked during a run.

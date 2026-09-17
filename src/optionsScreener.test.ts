@@ -12,7 +12,7 @@ function chain(expirationDate = "2027-01-15"): ChainResult {
 }
 
 test("screener preferences round-trip controls and the independent ticker list", () => {
-  const settings = { minimumApr: "40", minimumProbability: "85", minimumDistance: "3", maximumDistance: "15", excludeOutliers: false, excludedFlags: ["Wide spread", "Low volume"], columnOrder: [...DEFAULT_COLUMN_ORDER].reverse(), firstExpirations: "5", optionType: "put", strikeRange: "all" };
+  const settings = { tickerView: "text", minimumApr: "40", minimumProbability: "85", minimumDistance: "3", maximumDistance: "15", excludeOutliers: false, excludedFlags: ["Wide spread", "Low volume"], columnOrder: [...DEFAULT_COLUMN_ORDER].reverse(), firstExpirations: "5", optionType: "put", strikeRange: "all" };
   assert.deepEqual(parseScreenerSettings(JSON.stringify({ ...settings, tickers: ["OTHER"] })), { ...settings, tickers: ["OTHER"] });
   assert.deepEqual(parseScreenerSettings(undefined), DEFAULT_SCREENER_SETTINGS);
   assert.deepEqual(parseScreenerSettings("broken"), DEFAULT_SCREENER_SETTINGS);
@@ -27,6 +27,8 @@ test("screener preferences round-trip controls and the independent ticker list",
 
 test("saved ticker lists preserve empty lists, normalize symbols, and distinguish unsaved preferences", () => {
   assert.equal(parseScreenerSettings("{}").tickers, null);
+  assert.equal(parseScreenerSettings("{}").tickerView, "list");
+  assert.equal(parseScreenerSettings('{"tickerView":"invalid"}').tickerView, "list");
   assert.deepEqual(parseScreenerSettings('{"tickers":[]}').tickers, []);
   assert.deepEqual(parseScreenerSettings('{"tickers":[" intc ","AMZN","intc",null,"BAD/TICKER"]}').tickers, ["INTC", "AMZN"]);
   const initial = parseScreenerSettings('{"tickers":["OWL","GOOGL"]}');

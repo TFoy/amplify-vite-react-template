@@ -94,10 +94,12 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
         <label>Ticker symbols<input value={tickerInput} disabled={running} onChange={(event) => setTickerInput(event.target.value)} placeholder="INTC, AMZN, GOOGL" /></label>
         <button type="submit" disabled={running || !tickerInput.trim()}>Add tickers</button>
         <button type="button" disabled={running} onClick={() => { setTickers([...defaultTickers]); setInputError(""); }}>Reset to defaults</button>
+        <button type="button" disabled={running || !tickers.length} onClick={() => { setTickers([]); setInputError(""); }}>Clear all</button>
       </form>
       {inputError && <p role="alert" className="skew-error">{inputError}</p>}
-      <ul className="screener-tickers">{tickers.map((ticker) => <li key={ticker}>{ticker}
+      <ul className="screener-tickers">{tickers.map((ticker) => <li key={ticker}>
         <button type="button" disabled={running} aria-label={`Remove ${ticker}`} onClick={() => setTickers((current) => current.filter((value) => value !== ticker))}>×</button>
+        {ticker}
       </li>)}</ul>
       {!tickers.length && <p>Add at least one ticker to run the screener.</p>}
       <div className="screener-controls">

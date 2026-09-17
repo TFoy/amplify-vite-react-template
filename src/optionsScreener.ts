@@ -1,6 +1,8 @@
 import type { ChainResult, RequestedOptionType, RequestedStrikeRange } from "./OptionsAprPage";
 import { excludeAprOutliers } from "./optionsAprOutliers";
-import { hasUsableQuote, quoteQualityFlags, type QuoteFlag } from "./optionsQuoteQuality";
+import type { SortColumn } from "./optionsScreenerColumns";
+export type { SortColumn } from "./optionsScreenerColumns";
+import { DEFAULT_EXCLUDED_FLAGS, hasUsableQuote, quoteQualityFlags, type QuoteFlag, type QuoteFlagLabel } from "./optionsQuoteQuality";
 
 export type ScreenerRow = {
   ticker: string;
@@ -24,7 +26,6 @@ export type ScreenerRow = {
   midpoint: number | null;
   isOutlier: boolean;
 };
-export type SortColumn = "ticker" | "type" | "expiration" | "strike" | "currentPrice" | "distance" | "apr" | "bidApr" | "flagCount" | "probabilityWorthless" | "midpoint";
 export type SortRule = { column: SortColumn; descending: boolean };
 
 export function promoteSort(rules: readonly SortRule[], column: SortColumn): SortRule[] {
@@ -81,8 +82,8 @@ export function chainRows(ticker: string, chain: ChainResult): ScreenerRow[] {
   });
 }
 
-export function selectRows(rows: ScreenerRow[], minimumApr: number, minimumProbability: number, rules: readonly SortRule[], excludeOutliers = false, minimumDistance = 0, maximumDistance = Infinity) {
-  return rows.filter((row) => (!excludeOutliers || !row.excludeFromResults) && row.apr !== null && row.probabilityWorthless !== null &&
+export function selectRows(rows: ScreenerRow[], minimumApr: number, minimumProbability: number, rules: readonly SortRule[], excludeOutliers = false, minimumDistance = 0, maximumDistance = Infinity, excludedFlags: readonly QuoteFlagLabel[] = DEFAULT_EXCLUDED_FLAGS) {
+  return rows.filter((row) => (!excludeOutliers || !row.flags.some((flag) => excludedFlags.includes(flag.label))) && row.apr !== null && row.probabilityWorthless !== null &&
     row.apr * 100 >= minimumApr && row.probabilityWorthless * 100 >= minimumProbability &&
     ((minimumDistance === 0 && maximumDistance === Infinity) ||
       (row.distance !== null && row.distance * 100 >= minimumDistance && row.distance * 100 <= maximumDistance)))

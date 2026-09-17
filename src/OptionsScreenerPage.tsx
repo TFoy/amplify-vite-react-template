@@ -1,16 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RequestedOptionType, RequestedStrikeRange } from "./OptionsAprPage";
 import { DEFAULT_SCREENER_SETTINGS, type ScreenerSettings } from "./optionsScreenerSettings";
+import { QUOTE_FLAG_LABELS } from "./optionsQuoteQuality";
+import { DEFAULT_COLUMN_ORDER, SCREENER_COLUMNS, moveColumn } from "./optionsScreenerColumns";
 import { parseTickers, promoteSort, scanOptions, selectRows, validTicker, type Progress, type RequestJson, type ScreenerRow, type SortColumn, type SortRule } from "./optionsScreener";
 
-const columns: { key: SortColumn; label: string }[] = [
-  { key: "ticker", label: "Ticker" }, { key: "type", label: "Type" },
-  { key: "expiration", label: "Expiration date" }, { key: "strike", label: "Strike price" },
-  { key: "currentPrice", label: "Current price" }, { key: "distance", label: "Distance" },
-  { key: "apr", label: "APR" }, { key: "bidApr", label: "Bid APR" }, { key: "probabilityWorthless", label: "Exp w/o exercise" },
-  { key: "midpoint", label: "Midpoint premium" },
-  { key: "flagCount", label: "Flags" },
-];
 const percent = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(2)}%`;
 const currency = (value: number | null) => value === null ? "—" : value.toLocaleString(undefined, { style: "currency", currency: "USD" });
 
@@ -22,12 +16,14 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
   const [tickers, setTickers] = useState(defaultTickers);
   const [tickerInput, setTickerInput] = useState("");
   const [settings, setSettings] = useState(initialSettings);
-  const { minimumApr, minimumProbability, minimumDistance, maximumDistance, excludeOutliers, firstExpirations, optionType, strikeRange } = settings;
+  const columns = settings.columnOrder.map((key) => SCREENER_COLUMNS.find((column) => column.key === key)!);
+  const draggedColumn = useRef<SortColumn | null>(null);
+  const { minimumApr, minimumProbability, minimumDistance, maximumDistance, excludeOutliers, excludedFlags, firstExpirations, optionType, strikeRange } = settings;
   const [settingsError, setSettingsError] = useState("");
   async function updateSetting<K extends keyof ScreenerSettings>(key: K, value: ScreenerSettings[K]) {
     const next = { ...settings, [key]: value };
     setSettings(next);
-    setPage(1);
+    if (key !== "columnOrder") setPage(1);
     try { await onSettingsChange?.(next); setSettingsError(""); }
     catch (error) { setSettingsError(`Unable to save Run settings: ${error instanceof Error ? error.message : String(error)}`); }
   }
@@ -52,8 +48,8 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
   const expirationLimit = firstExpirations.trim() === "" ? undefined : Number(firstExpirations);
   const expirationLimitValid = expirationLimit === undefined || (Number.isSafeInteger(expirationLimit) && expirationLimit >= 1);
   const filtered = useMemo(() => thresholdsValid
-    ? selectRows(rows, Number(minimumApr), Number(minimumProbability), sort, excludeOutliers, Number(minimumDistance), maximumDistanceValue)
-    : [], [rows, minimumApr, minimumProbability, minimumDistance, maximumDistanceValue, sort, thresholdsValid, excludeOutliers]);
+    ? selectRows(rows, Number(minimumApr), Number(minimumProbability), sort, excludeOutliers, Number(minimumDistance), maximumDistanceValue, excludedFlags)
+    : [], [rows, minimumApr, minimumProbability, minimumDistance, maximumDistanceValue, sort, thresholdsValid, excludeOutliers, excludedFlags]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visibleRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -124,7 +120,7 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
       {tickerInput.trim() && <p>Add or clear the pending ticker symbols before running.</p>}
       {settingsError && <p role="alert" className="skew-error">{settingsError}</p>}
       {!expirationLimitValid && <p role="alert" className="skew-error">Enter a positive whole number of expirations, or leave blank for all.</p>}
-      <p className="options-apr-method-note">Leave the expiration limit blank for all dates, or enter N to retrieve the nearest N dates per ticker. Option types and strike coverage apply to the next run. Exclude outliers hides unusable quotes and OTM 10× APR outliers; wide spreads and activity warnings stay visible. Uncheck it to inspect excluded rows without retrieving again.</p>
+      <p className="options-apr-method-note">Leave the expiration limit blank for all dates, or enter N to retrieve the nearest N dates per ticker. Option types and strike coverage apply to the next run. Exclude outliers applies the flag selections in Results. Uncheck it to inspect excluded rows without retrieving again.</p>
       <p className="options-apr-method-note">Requests run sequentially with an 800 ms pause between requests, including between tickers.</p>
     </section>
     {progress && <section className="skew-panel" aria-label="Retrieval progress">
@@ -146,27 +142,56 @@ export default function OptionsScreenerPage({ defaultTickers, request, local = f
         <label>Maximum distance (%)<input type="number" min="0" step="any" placeholder="No limit" value={maximumDistance} onChange={(event) => void updateSetting("maximumDistance", event.target.value)} /></label>
       </div>
       <p className="options-apr-method-note">These filters update the table immediately using retrieved data. Changing them does not make any Yahoo API requests.</p>
+      <fieldset className="screener-flag-filters">
+        <legend>Flags to exclude</legend>
+        <p>{excludeOutliers ? "Hide rows with any checked flag." : "Flag exclusions are paused. Enable Exclude outliers above to apply these selections."}</p>
+        <div className="screener-controls">{QUOTE_FLAG_LABELS.map((label) => <label key={label} className="screener-exclude-outliers">
+          <input type="checkbox" checked={excludedFlags.includes(label)}
+            onChange={(event) => void updateSetting("excludedFlags", event.target.checked ? [...excludedFlags, label] : excludedFlags.filter((flag) => flag !== label))} />
+          {label}
+        </label>)}</div>
+      </fieldset>
       {!thresholdsValid && <p role="alert" className="skew-error">Enter an APR and minimum distance of at least 0, and a probability between 0 and 100. Maximum distance must be at least the minimum, or blank for no limit.</p>}
       <p>{filtered.length.toLocaleString()} matching options out of {rows.length.toLocaleString()} retrieved{running ? " · Results are still arriving." : "."}</p>
+      <div className="screener-controls">
+        <span>Drag a header handle to reorder columns. Focus a handle and use Left/Right arrows to move it with the keyboard.</span>
+        <button type="button" onClick={() => void updateSetting("columnOrder", [...DEFAULT_COLUMN_ORDER])}>Reset column order</button>
+      </div>
       <div className="skew-table-wrap"><table className="skew-table">
         <caption>Sorted by {sort.map((rule) => `${columns.find((column) => column.key === rule.column)?.label} (${rule.descending ? "descending" : "ascending"})`).join(", then ")}. Click a column to make it primary; click the primary column again to reverse it.</caption>
         <thead><tr>{columns.map(({ key, label }) => {
           const priority = sort.findIndex((rule) => rule.column === key);
           const rule = sort[priority];
-          return <th key={key} aria-sort={priority === 0 ? rule.descending ? "descending" : "ascending" : undefined}>
+          return <th key={key} aria-sort={priority === 0 ? rule.descending ? "descending" : "ascending" : undefined}
+            onDragOver={(event) => { if (draggedColumn.current) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
+            onDrop={(event) => {
+              event.preventDefault();
+              const source = draggedColumn.current;
+              draggedColumn.current = null;
+              if (source && source !== key) void updateSetting("columnOrder", moveColumn(settings.columnOrder, source, key));
+            }}>
+            <button type="button" className="screener-column-handle" draggable aria-label={`Move ${label} column`} title="Drag to reorder; Left/Right arrows also move this column"
+              onDragStart={(event) => { draggedColumn.current = key; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", key); }}
+              onDragEnd={() => { draggedColumn.current = null; }}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                const target = settings.columnOrder[settings.columnOrder.indexOf(key) + (event.key === "ArrowLeft" ? -1 : 1)];
+                if (target) void updateSetting("columnOrder", moveColumn(settings.columnOrder, key, target));
+              }}>↔</button>{" "}
             <button type="button" onClick={() => { setSort((current) => promoteSort(current, key)); setPage(1); }}>{label}{rule ? ` ${rule.descending ? "▼" : "▲"} ${priority + 1}` : ""}</button>
           </th>;
         })}</tr></thead>
         <tbody>{visibleRows.map((row) => <tr key={`${row.ticker}:${row.expiration}:${row.type}:${row.contractSymbol}`}>
-          <td>{row.ticker}</td><td>{row.type}</td><td>{row.expiration}</td><td>{currency(row.strike)}</td>
-          <td>{currency(row.currentPrice)}</td><td>{percent(row.distance)}</td>
-          <td>{percent(row.apr)}</td><td>{percent(row.bidApr)}</td><td>{percent(row.probabilityWorthless)}</td><td>{currency(row.midpoint)}</td>
-          <td className="screener-flags">{row.flags.length ? <details>
+          {columns.map(({ key }) => key === "flagCount" ? <td key={key} className="screener-flags">{row.flags.length ? <details>
             <summary>{row.flags.map((flag) => flag.label).join("; ")}</summary>
-            <ul>{row.flags.map((flag) => <li key={flag.label}><strong>{flag.exclude ? "Excluded when enabled" : "Warning only"}:</strong> {flag.detail}</li>)}</ul>
+            <ul>{row.flags.map((flag) => <li key={flag.label}><strong>{excludedFlags.includes(flag.label) ? "Selected for exclusion" : "Warning only"}:</strong> {flag.detail}</li>)}</ul>
             <p>Bid {currency(row.bid)} · Ask {currency(row.ask)} · Volume {row.volume ?? "unavailable"} · Open interest {row.openInterest ?? "unavailable"}</p>
             <p>Last trade: {row.lastTradeDate ? new Date(row.lastTradeDate).toLocaleString() : "unavailable"}</p>
-          </details> : "—"}</td>
+          </details> : "—"}</td> : <td key={key}>{
+            key === "strike" || key === "currentPrice" || key === "midpoint" ? currency(row[key]) :
+              key === "apr" || key === "bidApr" || key === "distance" || key === "probabilityWorthless" ? percent(row[key]) : row[key]
+          }</td>)}
         </tr>)}{!visibleRows.length && <tr><td colSpan={columns.length}>{status === "idle" ? "Choose tickers and click Run to retrieve options." : "No retrieved options match the filters."}</td></tr>}</tbody>
       </table></div>
       <nav className="screener-pagination" aria-label="Results pages">

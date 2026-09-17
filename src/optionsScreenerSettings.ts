@@ -1,4 +1,6 @@
 import type { RequestedOptionType, RequestedStrikeRange } from "./OptionsAprPage";
+import { DEFAULT_COLUMN_ORDER, normalizeColumnOrder, type SortColumn } from "./optionsScreenerColumns";
+import { DEFAULT_EXCLUDED_FLAGS, QUOTE_FLAG_LABELS, type QuoteFlagLabel } from "./optionsQuoteQuality";
 
 export type ScreenerSettings = {
   minimumApr: string;
@@ -6,6 +8,8 @@ export type ScreenerSettings = {
   minimumDistance: string;
   maximumDistance: string;
   excludeOutliers: boolean;
+  excludedFlags: QuoteFlagLabel[];
+  columnOrder: SortColumn[];
   firstExpirations: string;
   optionType: RequestedOptionType;
   strikeRange: RequestedStrikeRange;
@@ -14,6 +18,8 @@ export type ScreenerSettings = {
 export const DEFAULT_SCREENER_SETTINGS: ScreenerSettings = {
   minimumApr: "25", minimumProbability: "90", minimumDistance: "0", maximumDistance: "", excludeOutliers: true,
   firstExpirations: "", optionType: "both", strikeRange: "otm",
+  excludedFlags: DEFAULT_EXCLUDED_FLAGS,
+  columnOrder: DEFAULT_COLUMN_ORDER,
 };
 
 // Pick only Run settings; ticker lists are never persisted here.
@@ -29,6 +35,9 @@ export function parseScreenerSettings(json: string | null | undefined): Screener
     minimumDistance: percent(value.minimumDistance, "0"),
     maximumDistance: percent(value.maximumDistance, ""),
     excludeOutliers: typeof value.excludeOutliers === "boolean" ? value.excludeOutliers : true,
+    columnOrder: normalizeColumnOrder(value.columnOrder),
+    excludedFlags: Array.isArray(value.excludedFlags)
+      ? QUOTE_FLAG_LABELS.filter((label) => value.excludedFlags!.includes(label)) : [...DEFAULT_EXCLUDED_FLAGS],
     firstExpirations: typeof value.firstExpirations === "string" &&
       (value.firstExpirations === "" || (Number.isSafeInteger(Number(value.firstExpirations)) && Number(value.firstExpirations) > 0)) ? value.firstExpirations : "",
     optionType: value.optionType === "call" || value.optionType === "put" ? value.optionType : "both",

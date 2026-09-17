@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import type { ChainResult } from "./OptionsAprPage";
 import { DEFAULT_SCREENER_SETTINGS, parseScreenerSettings } from "./optionsScreenerSettings";
+import { DEFAULT_EXCLUDED_FLAGS, QUOTE_FLAG_LABELS } from "./optionsQuoteQuality";
+import { DEFAULT_COLUMN_ORDER, moveColumn, normalizeColumnOrder } from "./optionsScreenerColumns";
 import { chainRows, createScreenerRequest, parseTickers, promoteSort, scanOptions, selectRows, validTicker, waitForYahoo, type Progress, type RequestJson, type ScreenerRow } from "./optionsScreener";
 
 function chain(expirationDate = "2027-01-15"): ChainResult {
@@ -10,7 +12,7 @@ function chain(expirationDate = "2027-01-15"): ChainResult {
 }
 
 test("Run preferences round-trip all controls, preserve false, and exclude ticker lists", () => {
-  const settings = { minimumApr: "40", minimumProbability: "85", minimumDistance: "3", maximumDistance: "15", excludeOutliers: false, firstExpirations: "5", optionType: "put", strikeRange: "all" };
+  const settings = { minimumApr: "40", minimumProbability: "85", minimumDistance: "3", maximumDistance: "15", excludeOutliers: false, excludedFlags: ["Wide spread", "Low volume"], columnOrder: [...DEFAULT_COLUMN_ORDER].reverse(), firstExpirations: "5", optionType: "put", strikeRange: "all" };
   assert.deepEqual(parseScreenerSettings(JSON.stringify({ ...settings, tickers: ["OTHER"] })), settings);
   assert.deepEqual(parseScreenerSettings(undefined), DEFAULT_SCREENER_SETTINGS);
   assert.deepEqual(parseScreenerSettings("broken"), DEFAULT_SCREENER_SETTINGS);
@@ -21,6 +23,45 @@ test("Run preferences round-trip all controls, preserve false, and exclude ticke
   assert.equal(parseScreenerSettings('{"maximumDistance":"-1"}').maximumDistance, "");
   assert.equal(parseScreenerSettings('{"maximumDistance":"0"}').maximumDistance, "0");
   assert.deepEqual(parseScreenerSettings(JSON.stringify({ minimumApr: "-1", minimumProbability: "101", firstExpirations: "0", optionType: "invalid" })), DEFAULT_SCREENER_SETTINGS);
+});
+
+test("column moves preserve all columns and saved orders migrate without duplicates or unknown columns", () => {
+  const order = [...DEFAULT_COLUMN_ORDER];
+  const moved = moveColumn(order, "flagCount", "ticker");
+  assert.equal(moved[0], "flagCount");
+  assert.deepEqual(moveColumn(moved, "flagCount", "midpoint"), order);
+  assert.deepEqual(moveColumn(order, "apr", "apr"), order);
+  assert.equal(order[0], "ticker");
+  assert.equal(new Set(moved).size, order.length);
+  const restored = parseScreenerSettings(JSON.stringify({ columnOrder: moved }));
+  assert.deepEqual(restored.columnOrder, moved);
+  assert.deepEqual(parseScreenerSettings("{}").columnOrder, order);
+  const migrated = normalizeColumnOrder(["bidApr", "ticker", "bidApr", "unknown", null]);
+  assert.deepEqual(migrated.slice(0, 2), ["bidApr", "ticker"]);
+  assert.equal(migrated.length, order.length);
+  assert.deepEqual(new Set(migrated), new Set(order));
+});
+
+test("flag preferences preserve empty selections, migrate old settings, and reject unknown flags", () => {
+  assert.deepEqual(parseScreenerSettings("{}").excludedFlags, DEFAULT_EXCLUDED_FLAGS);
+  assert.deepEqual(parseScreenerSettings('{"excludedFlags":[]}').excludedFlags, []);
+  assert.deepEqual(parseScreenerSettings('{"excludedFlags":["Low volume","unknown","Low volume",null]}').excludedFlags, ["Low volume"]);
+});
+
+test("every flag can be independently excluded and the master switch pauses exclusions", () => {
+  const base = chainRows("TEST", chain())[0];
+  const rows = QUOTE_FLAG_LABELS.map((label) => ({ ...base, contractSymbol: label, flags: [{ label, detail: "test", exclude: false }] }));
+  for (const label of QUOTE_FLAG_LABELS) {
+    const filtered = selectRows(rows, 0, 0, [], true, 0, Infinity, [label]);
+    assert.equal(filtered.length, rows.length - 1);
+    assert.ok(filtered.every((row) => row.contractSymbol !== label));
+  }
+  assert.equal(selectRows(rows, 0, 0, [], true, 0, Infinity, []).length, rows.length);
+  assert.equal(selectRows(rows, 0, 0, [], false, 0, Infinity, QUOTE_FLAG_LABELS).length, rows.length);
+  assert.equal(selectRows(rows, 0, 0, [], true, 0, Infinity, QUOTE_FLAG_LABELS).length, 0);
+  const multi = { ...base, flags: [rows[0].flags[0], rows[4].flags[0]] };
+  assert.equal(selectRows([multi], 0, 0, [], true, 0, Infinity, ["Wide spread"]).length, 0);
+  assert.equal(rows.length, QUOTE_FLAG_LABELS.length);
 });
 
 test("tickers normalize and deduplicate without silently rewriting invalid symbols", () => {

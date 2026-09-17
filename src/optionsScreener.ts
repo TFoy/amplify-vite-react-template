@@ -7,12 +7,14 @@ export type ScreenerRow = {
   type: "call" | "put";
   expiration: string;
   strike: number;
+  currentPrice: number | null;
+  distance: number | null;
   apr: number | null;
   probabilityWorthless: number | null;
   midpoint: number | null;
   isOutlier: boolean;
 };
-export type SortColumn = "ticker" | "type" | "expiration" | "strike" | "apr" | "probabilityWorthless" | "midpoint";
+export type SortColumn = "ticker" | "type" | "expiration" | "strike" | "currentPrice" | "distance" | "apr" | "probabilityWorthless" | "midpoint";
 export type SortRule = { column: SortColumn; descending: boolean };
 
 export function promoteSort(rules: readonly SortRule[], column: SortColumn): SortRule[] {
@@ -34,6 +36,7 @@ export function validTicker(ticker: string) {
 
 export function chainRows(ticker: string, chain: ChainResult): ScreenerRow[] {
   const finite = (value: number | null) => value !== null && Number.isFinite(value) ? value : null;
+  const currentPrice = finite(chain.underlyingPrice);
   const outliers = new Set<string>();
   for (const type of ["call", "put"] as const) {
     const points = (type === "call" ? chain.calls : chain.puts)
@@ -48,6 +51,9 @@ export function chainRows(ticker: string, chain: ChainResult): ScreenerRow[] {
     return {
       ticker, contractSymbol: option.contractSymbol, type: option.optionType,
       expiration: chain.expirationDate, strike: option.strike,
+      currentPrice,
+      distance: currentPrice !== null && currentPrice > 0
+        ? finite(Math.abs(option.strike - currentPrice) / currentPrice) : null,
       apr: finite(option.simpleApr), probabilityWorthless,
       midpoint: finite(option.midpoint),
       isOutlier: outliers.has(option.contractSymbol),
@@ -55,9 +61,10 @@ export function chainRows(ticker: string, chain: ChainResult): ScreenerRow[] {
   });
 }
 
-export function selectRows(rows: ScreenerRow[], minimumApr: number, minimumProbability: number, rules: readonly SortRule[], excludeOutliers = false) {
+export function selectRows(rows: ScreenerRow[], minimumApr: number, minimumProbability: number, rules: readonly SortRule[], excludeOutliers = false, minimumDistance = 0) {
   return rows.filter((row) => (!excludeOutliers || !row.isOutlier) && row.apr !== null && row.probabilityWorthless !== null &&
-    row.apr * 100 >= minimumApr && row.probabilityWorthless * 100 >= minimumProbability)
+    row.apr * 100 >= minimumApr && row.probabilityWorthless * 100 >= minimumProbability &&
+    (minimumDistance === 0 || (row.distance !== null && row.distance * 100 >= minimumDistance)))
     .sort((a, b) => {
       for (const { column, descending } of rules) {
         const left = a[column];

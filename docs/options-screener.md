@@ -42,6 +42,10 @@ Deploy the updated Amplify backend schema along with the frontend to enable the 
 
 ## Calculations and request pacing
 
+**Minimum distance (%)**, alongside the APR and probability filters in Results, filters retrieved rows immediately without Yahoo requests. It defaults to 0 (unrestricted); for example, 3 keeps distances of at least 3%. Positive minimums exclude rows with unavailable distance. This setting saves with the other preferences, and existing saved settings default to 0.
+
+**Current price** is the underlying share price returned with each expiration chain at retrieval time. **Distance** is `abs(strike − current price) / current price × 100%`: strikes of 103 and 90 with a current price of 100 show 3% and 10%, respectively. Both columns support multi-column sorting. Distance is unavailable when current price is missing or nonpositive. Prices are retrieval snapshots, not streaming quotes.
+
 The local and cloud paths use the same APR-chain calculation code as the Explorer. Put APR uses strike-price collateral; call APR uses current-share-price collateral. Premium is the bid/ask midpoint **per share**. APR is a simple annualized premium-selling measure, not a forecast of option-buying returns. **Exp w/o exercise** displays `probabilityExpiresWorthless` as a percentage, matching the minimum expires without exercise filter. It uses the Explorer's Black–Scholes estimate with zero rates/dividend yield and does not model early assignment.
 
 Requests are sequential with 800 ms between completions and subsequent requests, including ticker boundaries. The cloud expiration endpoint also retains its existing internal delay before fetching calendar metadata. Local requests share a server-side queue. HTTP 429/502/503/504 responses are retried up to three times with 2/4/8-second backoff (or a longer Retry-After). Each HTTP attempt has a 45-second timeout. Yahoo may still reject requests or return unavailable/stale quotes; pacing cannot guarantee availability. Review errors and quote freshness before using results.

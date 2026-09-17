@@ -3,6 +3,7 @@ import type { RequestedOptionType, RequestedStrikeRange } from "./OptionsAprPage
 export type ScreenerSettings = {
   minimumApr: string;
   minimumProbability: string;
+  minimumDistance: string;
   excludeOutliers: boolean;
   firstExpirations: string;
   optionType: RequestedOptionType;
@@ -10,7 +11,7 @@ export type ScreenerSettings = {
 };
 
 export const DEFAULT_SCREENER_SETTINGS: ScreenerSettings = {
-  minimumApr: "25", minimumProbability: "90", excludeOutliers: true,
+  minimumApr: "25", minimumProbability: "90", minimumDistance: "0", excludeOutliers: true,
   firstExpirations: "", optionType: "both", strikeRange: "otm",
 };
 
@@ -24,6 +25,7 @@ export function parseScreenerSettings(json: string | null | undefined): Screener
   return {
     minimumApr: percent(value.minimumApr, "25"),
     minimumProbability: percent(value.minimumProbability, "90", 100),
+    minimumDistance: percent(value.minimumDistance, "0"),
     excludeOutliers: typeof value.excludeOutliers === "boolean" ? value.excludeOutliers : true,
     firstExpirations: typeof value.firstExpirations === "string" &&
       (value.firstExpirations === "" || (Number.isSafeInteger(Number(value.firstExpirations)) && Number(value.firstExpirations) > 0)) ? value.firstExpirations : "",

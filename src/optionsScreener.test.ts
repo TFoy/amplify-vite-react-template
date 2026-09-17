@@ -10,11 +10,13 @@ function chain(expirationDate = "2027-01-15"): ChainResult {
 }
 
 test("Run preferences round-trip all controls, preserve false, and exclude ticker lists", () => {
-  const settings = { minimumApr: "40", minimumProbability: "85", excludeOutliers: false, firstExpirations: "5", optionType: "put", strikeRange: "all" };
+  const settings = { minimumApr: "40", minimumProbability: "85", minimumDistance: "3", excludeOutliers: false, firstExpirations: "5", optionType: "put", strikeRange: "all" };
   assert.deepEqual(parseScreenerSettings(JSON.stringify({ ...settings, tickers: ["OTHER"] })), settings);
   assert.deepEqual(parseScreenerSettings(undefined), DEFAULT_SCREENER_SETTINGS);
   assert.deepEqual(parseScreenerSettings("broken"), DEFAULT_SCREENER_SETTINGS);
   assert.deepEqual(parseScreenerSettings("null"), DEFAULT_SCREENER_SETTINGS);
+  assert.equal(parseScreenerSettings('{"minimumApr":"40"}').minimumDistance, "0");
+  assert.equal(parseScreenerSettings('{"minimumDistance":"-1"}').minimumDistance, "0");
   assert.deepEqual(parseScreenerSettings(JSON.stringify({ minimumApr: "-1", minimumProbability: "101", firstExpirations: "0", optionType: "invalid" })), DEFAULT_SCREENER_SETTINGS);
 });
 
@@ -31,12 +33,36 @@ test("thresholds are inclusive percentages, displayed probability matches the fi
   assert.equal(selectRows(rows, 26, 90, [{ column: "apr", descending: true }])[0].type, "put");
   assert.equal(selectRows(rows, 0, 91, [{ column: "apr", descending: true }]).length, 0);
   assert.equal(selectRows([...rows, { ...rows[0], apr: null }, { ...rows[0], probabilityWorthless: null }], 0, 0, [{ column: "apr", descending: true }]).length, 2);
-  const higher = { ...rows[0], ticker: "ZZZ", type: "put" as const, expiration: "2028-01-01", strike: 200, apr: 0.8, probabilityWorthless: 0.95, midpoint: 10 };
-  for (const column of ["ticker", "type", "expiration", "strike", "apr", "probabilityWorthless", "midpoint"] as const) {
+  const higher = { ...rows[0], ticker: "ZZZ", type: "put" as const, expiration: "2028-01-01", strike: 200, currentPrice: 150, distance: 1 / 3, apr: 0.8, probabilityWorthless: 0.95, midpoint: 10 };
+  for (const column of ["ticker", "type", "expiration", "strike", "currentPrice", "distance", "apr", "probabilityWorthless", "midpoint"] as const) {
     assert.equal(selectRows([rows[0], higher], 0, 0, [{ column, descending: true }])[0], higher);
     assert.equal(selectRows([rows[0], higher], 0, 0, [{ column, descending: false }])[0], rows[0]);
   }
   assert.equal(rows[0].type, "call", "sorting must not mutate retrieved rows");
+});
+
+test("distance is absolute and relative to current price for both option types", () => {
+  const data = chain();
+  data.calls[0].strike = 103;
+  data.puts[0].strike = 90;
+  const rows = chainRows("TEST", data);
+  assert.equal(rows[0].currentPrice, 100);
+  assert.equal(rows[0].distance, 0.03);
+  assert.equal(rows[1].distance, 0.1);
+  assert.equal(chainRows("TEST", chain())[0].distance, 0);
+  for (const underlyingPrice of [0, -1, NaN, Infinity]) {
+    assert.equal(chainRows("TEST", { ...data, underlyingPrice })[0].distance, null);
+  }
+});
+
+test("minimum distance uses inclusive percentages and zero leaves distance unrestricted", () => {
+  const base = chainRows("TEST", chain())[0];
+  const rows = [0, 0.03, 0.1, 1.5, null].map((distance) => ({ ...base, distance }));
+  const rules = [{ column: "distance" as const, descending: false }];
+  assert.deepEqual(selectRows(rows, 0, 0, rules, false, 3).map((row) => row.distance), [0.03, 0.1, 1.5]);
+  assert.deepEqual(selectRows(rows, 0, 0, rules, false, 10).map((row) => row.distance), [0.1, 1.5]);
+  assert.equal(selectRows(rows, 0, 0, rules, false, 0).length, 5);
+  assert.equal(rows.length, 5);
 });
 
 test("new primary sort preserves previous priorities and directions within each group", () => {

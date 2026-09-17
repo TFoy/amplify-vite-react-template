@@ -236,6 +236,10 @@ function summarizeAprOption(
     ask,
     midpoint,
     simpleApr,
+    volume: getFiniteNumber(option.volume),
+    openInterest: getFiniteNumber(option.openInterest),
+    lastTradeDate: option.lastTradeDate instanceof Date && Number.isFinite(option.lastTradeDate.getTime())
+      ? option.lastTradeDate.toISOString() : null,
     impliedVolatility: getFiniteNumber(option.impliedVolatility),
     probabilityExpiresWorthless: probabilityExpiresWorthless(
       optionType,

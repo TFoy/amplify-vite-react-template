@@ -34,6 +34,9 @@ type OptionRow = {
   simpleApr: number | null;
   impliedVolatility: number | null;
   probabilityExpiresWorthless: number | null;
+  volume?: number | null;
+  openInterest?: number | null;
+  lastTradeDate?: string | null;
 };
 
 export type ChainResult = {

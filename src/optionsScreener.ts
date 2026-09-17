@@ -1,5 +1,6 @@
 import type { ChainResult, RequestedOptionType, RequestedStrikeRange } from "./OptionsAprPage";
 import { excludeAprOutliers } from "./optionsAprOutliers";
+import { hasUsableQuote, quoteQualityFlags, type QuoteFlag } from "./optionsQuoteQuality";
 
 export type ScreenerRow = {
   ticker: string;
@@ -10,17 +11,26 @@ export type ScreenerRow = {
   currentPrice: number | null;
   distance: number | null;
   apr: number | null;
+  bidApr: number | null;
+  bid: number | null;
+  ask: number | null;
+  volume: number | null;
+  openInterest: number | null;
+  lastTradeDate: string | null;
+  flags: QuoteFlag[];
+  flagCount: number;
+  excludeFromResults: boolean;
   probabilityWorthless: number | null;
   midpoint: number | null;
   isOutlier: boolean;
 };
-export type SortColumn = "ticker" | "type" | "expiration" | "strike" | "currentPrice" | "distance" | "apr" | "probabilityWorthless" | "midpoint";
+export type SortColumn = "ticker" | "type" | "expiration" | "strike" | "currentPrice" | "distance" | "apr" | "bidApr" | "flagCount" | "probabilityWorthless" | "midpoint";
 export type SortRule = { column: SortColumn; descending: boolean };
 
 export function promoteSort(rules: readonly SortRule[], column: SortColumn): SortRule[] {
   const previous = rules.find((rule) => rule.column === column);
   const descending = rules[0]?.column === column
-    ? !rules[0].descending : previous?.descending ?? column === "apr";
+    ? !rules[0].descending : previous?.descending ?? (column === "apr" || column === "bidApr" || column === "flagCount");
   return [{ column, descending }, ...rules.filter((rule) => rule.column !== column)];
 }
 export type Progress = { total: number; processed: number; retrieved: number; ticker: string; expiration: string; chain: number; chains: number };
@@ -40,7 +50,7 @@ export function chainRows(ticker: string, chain: ChainResult): ScreenerRow[] {
   const outliers = new Set<string>();
   for (const type of ["call", "put"] as const) {
     const points = (type === "call" ? chain.calls : chain.puts)
-      .filter((option) => finite(option.simpleApr) !== null)
+      .filter((option) => hasUsableQuote(option) && finite(option.simpleApr) !== null && option.simpleApr! > 0)
       .map((option) => ({ x: option.strike, y: option.simpleApr!, contractSymbol: option.contractSymbol }));
     const retained = new Set(excludeAprOutliers(points, type, chain.underlyingPrice));
     points.filter((point) => !retained.has(point)).forEach((point) => outliers.add(point.contractSymbol));
@@ -48,6 +58,13 @@ export function chainRows(ticker: string, chain: ChainResult): ScreenerRow[] {
   return [...chain.calls, ...chain.puts].map((option) => {
     const probability = finite(option.probabilityExpiresWorthless);
     const probabilityWorthless = probability !== null && probability >= 0 && probability <= 1 ? probability : null;
+    const flags = quoteQualityFlags(option, chain.marketDataDate);
+    const isOutlier = outliers.has(option.contractSymbol);
+    if (isOutlier) flags.push({ label: "APR outlier", detail: "OTM APR is at least 10× another usable OTM quote in the comparison direction, for this ticker and expiration.", exclude: true });
+    const collateral = option.optionType === "put" ? option.strike : chain.underlyingPrice;
+    const bid = finite(option.bid);
+    const bidApr = bid !== null && bid >= 0 && collateral > 0 && Number.isFinite(collateral) && chain.daysToExpiration > 0
+      ? finite((bid / collateral) * (365 / chain.daysToExpiration)) : null;
     return {
       ticker, contractSymbol: option.contractSymbol, type: option.optionType,
       expiration: chain.expirationDate, strike: option.strike,
@@ -55,14 +72,17 @@ export function chainRows(ticker: string, chain: ChainResult): ScreenerRow[] {
       distance: currentPrice !== null && currentPrice > 0
         ? finite(Math.abs(option.strike - currentPrice) / currentPrice) : null,
       apr: finite(option.simpleApr), probabilityWorthless,
+      bidApr, bid, ask: finite(option.ask), volume: finite(option.volume ?? null),
+      openInterest: finite(option.openInterest ?? null), lastTradeDate: option.lastTradeDate ?? null,
+      flags, flagCount: flags.length, excludeFromResults: flags.some((flag) => flag.exclude),
       midpoint: finite(option.midpoint),
-      isOutlier: outliers.has(option.contractSymbol),
+      isOutlier,
     };
   });
 }
 
 export function selectRows(rows: ScreenerRow[], minimumApr: number, minimumProbability: number, rules: readonly SortRule[], excludeOutliers = false, minimumDistance = 0) {
-  return rows.filter((row) => (!excludeOutliers || !row.isOutlier) && row.apr !== null && row.probabilityWorthless !== null &&
+  return rows.filter((row) => (!excludeOutliers || !row.excludeFromResults) && row.apr !== null && row.probabilityWorthless !== null &&
     row.apr * 100 >= minimumApr && row.probabilityWorthless * 100 >= minimumProbability &&
     (minimumDistance === 0 || (row.distance !== null && row.distance * 100 >= minimumDistance)))
     .sort((a, b) => {

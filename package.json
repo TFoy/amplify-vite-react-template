@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:screener": "node --import tsx scripts/options-screener-local.ts",
+    "test:screener": "node --import tsx --test src/optionsScreener.test.ts",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"

@@ -7,6 +7,7 @@ import LandingPage from "./LandingPage";
 import MassiveDividends from "./MassiveDividends";
 import OptionsTrackerPage from "./OptionsTrackerPage";
 import OptionsAprPage from "./OptionsAprPage";
+import OptionsScreenerCloudPage from "./OptionsScreenerCloudPage";
 import SchwabMarketInfo from "./SchwabMarketInfo";
 import StockAnalyzerEvaluationsPage from "./StockAnalyzerEvaluationsPage";
 import TastyAuthPage from "./TastyAuthPage";
@@ -150,6 +151,10 @@ function App() {
         <OptionsAprPage />
       </SiteFrame>
     );
+  }
+
+  if (pathname === "/options-screener") {
+    return <SiteFrame><OptionsScreenerCloudPage /></SiteFrame>;
   }
 
   if (pathname === "/yahoo-options-skew" || pathname.startsWith("/yahoo-options-skew/")) {

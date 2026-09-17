@@ -247,7 +247,7 @@ function summarizeAprOption(
   };
 }
 
-function buildAprChain(
+export function buildAprChain(
   result: OptionsResult,
   requestedOptionType: "both" | "call" | "put",
   requestedStrikeRange: "otm" | "all",

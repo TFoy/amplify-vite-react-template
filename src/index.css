@@ -657,6 +657,57 @@ main {
   margin-top: 12px;
 }
 
+.screener-add, .screener-controls, .screener-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.options-screener label {
+  display: grid;
+  gap: 6px;
+  color: #536173;
+  font-weight: 600;
+}
+
+.options-screener input, .options-screener select {
+  padding: 10px;
+  border: 1px solid #bac5d1;
+  border-radius: 6px;
+  background: white;
+  color: #172033;
+}
+
+.screener-tickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.screener-tickers li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  border-radius: 8px;
+  background: #eef4fa;
+}
+
+.screener-tickers button { padding: 4px 8px; }
+.options-screener progress { width: 100%; height: 22px; accent-color: #2563eb; }
+.options-screener th button { background: transparent; color: inherit; padding: 4px 0; text-align: left; }
+.screener-pagination { align-items: center; }
+.options-screener .screener-exclude-outliers {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+}
+
 .options-apr-exclude-outliers {
   display: flex;
   align-items: center;

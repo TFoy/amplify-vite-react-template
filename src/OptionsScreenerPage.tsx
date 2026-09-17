@@ -1,0 +1,162 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { RequestedOptionType, RequestedStrikeRange } from "./OptionsAprPage";
+import { DEFAULT_SCREENER_SETTINGS, type ScreenerSettings } from "./optionsScreenerSettings";
+import { parseTickers, scanOptions, selectRows, validTicker, type Progress, type RequestJson, type ScreenerRow, type SortColumn } from "./optionsScreener";
+
+const columns: { key: SortColumn; label: string }[] = [
+  { key: "ticker", label: "Ticker" }, { key: "type", label: "Type" },
+  { key: "expiration", label: "Expiration date" }, { key: "strike", label: "Strike price" },
+  { key: "apr", label: "APR" }, { key: "exercise", label: "Chance of exercise" },
+  { key: "midpoint", label: "Midpoint premium" },
+];
+const percent = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(2)}%`;
+const currency = (value: number | null) => value === null ? "—" : value.toLocaleString(undefined, { style: "currency", currency: "USD" });
+
+export default function OptionsScreenerPage({ defaultTickers, request, local = false, initialSettings = DEFAULT_SCREENER_SETTINGS, onSettingsChange }: {
+  defaultTickers: string[]; request: RequestJson; local?: boolean;
+  initialSettings?: ScreenerSettings;
+  onSettingsChange?: (settings: ScreenerSettings) => void | Promise<void>;
+}) {
+  const [tickers, setTickers] = useState(defaultTickers);
+  const [tickerInput, setTickerInput] = useState("");
+  const [settings, setSettings] = useState(initialSettings);
+  const { minimumApr, minimumProbability, excludeOutliers, firstExpirations, optionType, strikeRange } = settings;
+  const [settingsError, setSettingsError] = useState("");
+  async function updateSetting<K extends keyof ScreenerSettings>(key: K, value: ScreenerSettings[K]) {
+    const next = { ...settings, [key]: value };
+    setSettings(next);
+    setPage(1);
+    try { await onSettingsChange?.(next); setSettingsError(""); }
+    catch (error) { setSettingsError(`Unable to save Run settings: ${error instanceof Error ? error.message : String(error)}`); }
+  }
+  const [rows, setRows] = useState<ScreenerRow[]>([]);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [inputError, setInputError] = useState("");
+  const [progress, setProgress] = useState<Progress | null>(null);
+  const [status, setStatus] = useState<"idle" | "running" | "complete" | "cancelled">("idle");
+  const [startedAt, setStartedAt] = useState<Date | null>(null);
+  const [sort, setSort] = useState<{ column: SortColumn; descending: boolean }>({ column: "apr", descending: true });
+  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState(1);
+  const controller = useRef<AbortController | null>(null);
+  const running = status === "running";
+  useEffect(() => () => controller.current?.abort(), []);
+
+  const thresholdsValid = minimumApr.trim() !== "" && Number.isFinite(Number(minimumApr)) && Number(minimumApr) >= 0 &&
+    minimumProbability.trim() !== "" && Number.isFinite(Number(minimumProbability)) && Number(minimumProbability) >= 0 && Number(minimumProbability) <= 100;
+  const expirationLimit = firstExpirations.trim() === "" ? undefined : Number(firstExpirations);
+  const expirationLimitValid = expirationLimit === undefined || (Number.isSafeInteger(expirationLimit) && expirationLimit >= 1);
+  const filtered = useMemo(() => thresholdsValid
+    ? selectRows(rows, Number(minimumApr), Number(minimumProbability), sort.column, sort.descending, excludeOutliers)
+    : [], [rows, minimumApr, minimumProbability, sort, thresholdsValid, excludeOutliers]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const visibleRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  function addTickers() {
+    const added = parseTickers(tickerInput);
+    const invalid = added.filter((ticker) => !validTicker(ticker));
+    if (invalid.length) { setInputError(`Invalid ticker symbols: ${invalid.join(", ")}`); return; }
+    setTickers((current) => [...new Set([...current, ...added])]);
+    setTickerInput("");
+    setInputError("");
+  }
+
+  async function run() {
+    if (controller.current || !expirationLimitValid || !tickers.length) return;
+    const abortController = new AbortController();
+    controller.current = abortController;
+    const snapshot = [...tickers];
+    setRows([]); setErrors([]); setPage(1); setStatus("running"); setStartedAt(new Date());
+    setProgress({ total: snapshot.length, processed: 0, retrieved: 0, ticker: "", expiration: "", chain: 0, chains: 0 });
+    try {
+      await scanOptions({ tickers: snapshot, request, signal: abortController.signal,
+        firstExpirations: expirationLimit, optionType, strikeRange,
+        onRows: (added) => setRows((current) => [...current, ...added]),
+        onProgress: setProgress, onError: (message) => setErrors((current) => [...current, message]),
+      });
+      setStatus("complete");
+    } catch (error) {
+      if (abortController.signal.aborted) setStatus("cancelled");
+      else { setErrors((current) => [...current, error instanceof Error ? error.message : String(error)]); setStatus("complete"); }
+    } finally { controller.current = null; }
+  }
+
+  return <main className="skew-page options-screener">
+    <header><a href={local ? "/screener.local.html" : "/"}>{local ? "Local screener" : "Home"}</a>
+      <h1>Options APR Screener</h1>
+      <p>Compare option APRs across tickers, expirations, and strikes.</p>
+    </header>
+    <section className="skew-panel">
+      <h2>Tickers to scan</h2>
+      <p>{local ? "Local Yahoo Finance access · no sign-in required." : "Starts with your Options APR Explorer tickers. Edit this list for the next run."}</p>
+      <form className="screener-add" onSubmit={(event) => { event.preventDefault(); addTickers(); }}>
+        <label>Ticker symbols<input value={tickerInput} disabled={running} onChange={(event) => setTickerInput(event.target.value)} placeholder="INTC, AMZN, GOOGL" /></label>
+        <button type="submit" disabled={running || !tickerInput.trim()}>Add tickers</button>
+        <button type="button" disabled={running} onClick={() => { setTickers([...defaultTickers]); setInputError(""); }}>Reset to defaults</button>
+      </form>
+      {inputError && <p role="alert" className="skew-error">{inputError}</p>}
+      <ul className="screener-tickers">{tickers.map((ticker) => <li key={ticker}>{ticker}
+        <button type="button" disabled={running} aria-label={`Remove ${ticker}`} onClick={() => setTickers((current) => current.filter((value) => value !== ticker))}>×</button>
+      </li>)}</ul>
+      {!tickers.length && <p>Add at least one ticker to run the screener.</p>}
+      <div className="screener-controls">
+        <label>First N expirations per ticker<input type="number" min="1" step="1" placeholder="All" disabled={running} value={firstExpirations} onChange={(event) => void updateSetting("firstExpirations", event.target.value)} /></label>
+        <label>Option types<select disabled={running} value={optionType} onChange={(event) => void updateSetting("optionType", event.target.value as RequestedOptionType)}>
+          <option value="both">Calls and puts</option><option value="put">Puts only</option><option value="call">Calls only</option>
+        </select></label>
+        <label>Strike coverage<select disabled={running} value={strikeRange} onChange={(event) => void updateSetting("strikeRange", event.target.value as RequestedStrikeRange)}>
+          <option value="otm">OTM/ATM only</option><option value="all">All strikes</option>
+        </select></label>
+        <label className="screener-exclude-outliers"><input type="checkbox" checked={excludeOutliers} onChange={(event) => void updateSetting("excludeOutliers", event.target.checked)} />Exclude outliers</label>
+      </div>
+      <div className="screener-controls">
+        <button type="button" disabled={running || !tickers.length || !expirationLimitValid || !!tickerInput.trim()} onClick={() => void run()}>Run</button>
+        {running && <button type="button" onClick={() => controller.current?.abort()}>Cancel</button>}
+      </div>
+      {tickerInput.trim() && <p>Add or clear the pending ticker symbols before running.</p>}
+      {settingsError && <p role="alert" className="skew-error">{settingsError}</p>}
+      {!expirationLimitValid && <p role="alert" className="skew-error">Enter a positive whole number of expirations, or leave blank for all.</p>}
+      <p className="options-apr-method-note">Leave the expiration limit blank for all dates, or enter N to retrieve the nearest N dates per ticker. Option types and strike coverage apply to the next run. Exclude outliers uses the Explorer's OTM-only 10× rule and can be toggled without retrieving again.</p>
+      <p className="options-apr-method-note">Requests run sequentially with an 800 ms pause between requests, including between tickers.</p>
+    </section>
+    {progress && <section className="skew-panel" aria-label="Retrieval progress">
+      <progress aria-label="Tickers processed" value={progress.processed} max={progress.total} />
+      <div role="status" aria-live="polite">
+        <p>{progress.processed} of {progress.total} tickers processed · {progress.retrieved} fully retrieved
+          {status === "complete" ? errors.length ? " · Finished with errors; results are incomplete." : " · Complete" : status === "cancelled" ? " · Cancelled; partial results retained." : ""}</p>
+        {running && <p>{progress.ticker}: {progress.chains ? `${progress.chain} of ${progress.chains} expiration chains retrieved/attempted · ${progress.expiration}` : "Retrieving expiration dates…"}</p>}
+      </div>
+      {startedAt && <p>Run started {startedAt.toLocaleString()}. Keep this page open while retrieval runs.</p>}
+      {errors.length > 0 && <details open><summary>{errors.length} retrieval error{errors.length === 1 ? "" : "s"}</summary><ul>{errors.map((error, index) => <li key={index}>{error}</li>)}</ul></details>}
+    </section>}
+    <section className="skew-panel">
+      <h2>Results</h2>
+      <div className="screener-controls">
+        <label>Minimum APR (%)<input type="number" min="0" step="any" value={minimumApr} onChange={(event) => void updateSetting("minimumApr", event.target.value)} /></label>
+        <label>Minimum expires without exercise (%)<input type="number" min="0" max="100" step="any" value={minimumProbability} onChange={(event) => void updateSetting("minimumProbability", event.target.value)} /></label>
+      </div>
+      <p className="options-apr-method-note">These filters update the table immediately using retrieved data. Changing them does not make any Yahoo API requests.</p>
+      {!thresholdsValid && <p role="alert" className="skew-error">Enter an APR of at least 0 and a probability between 0 and 100.</p>}
+      <p>{filtered.length.toLocaleString()} matching options out of {rows.length.toLocaleString()} retrieved{running ? " · Results are still arriving." : "."}</p>
+      <div className="skew-table-wrap"><table className="skew-table">
+        <thead><tr>{columns.map(({ key, label }) => <th key={key} aria-sort={sort.column === key ? sort.descending ? "descending" : "ascending" : "none"}>
+          <button type="button" onClick={() => { setSort({ column: key, descending: sort.column === key ? !sort.descending : key === "apr" }); setPage(1); }}>{label}{sort.column === key ? sort.descending ? " ▼" : " ▲" : ""}</button>
+        </th>)}</tr></thead>
+        <tbody>{visibleRows.map((row) => <tr key={`${row.ticker}:${row.expiration}:${row.type}:${row.contractSymbol}`}>
+          <td>{row.ticker}</td><td>{row.type}</td><td>{row.expiration}</td><td>{currency(row.strike)}</td>
+          <td>{percent(row.apr)}</td><td>{percent(row.exercise)}</td><td>{currency(row.midpoint)}</td>
+        </tr>)}{!visibleRows.length && <tr><td colSpan={7}>{status === "idle" ? "Choose tickers and click Run to retrieve options." : "No retrieved options match both minimums."}</td></tr>}</tbody>
+      </table></div>
+      <nav className="screener-pagination" aria-label="Results pages">
+        <label>Rows per page <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>{[10, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+        <button type="button" disabled={currentPage === 1} onClick={() => setPage(1)}>First</button>
+        <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+        <span>Page {currentPage} of {pageCount}</span>
+        <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</button>
+        <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(pageCount)}>Last</button>
+      </nav>
+      <p className="options-apr-method-note">APR uses midpoint premium, annualized against strike collateral for puts and current share price for calls, as in the APR Explorer. This is a premium-selling metric, not an expected return from buying an option. Midpoint premium is per share. Chance of exercise is 100% minus the estimated probability of expiring without exercise; the Black–Scholes estimate does not model early exercise. Options missing APR or probability are omitted from matches.</p>
+    </section>
+  </main>;
+}

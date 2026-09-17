@@ -80,11 +80,14 @@ export async function listOptionsAprHistoryTickers() {
     nextToken = result.nextToken;
   } while (nextToken);
 
-  const tickerResult = await client.models.OptionsAprTicker.list({ limit: 1_000 });
-  if (tickerResult.errors) {
-    throw new Error(describeErrors(tickerResult.errors));
-  }
-  tickerResult.data.forEach((record) => tickers.add(record.ticker));
+  do {
+    const tickerResult = await client.models.OptionsAprTicker.list({ limit: 1_000, nextToken });
+    if (tickerResult.errors) {
+      throw new Error(describeErrors(tickerResult.errors));
+    }
+    tickerResult.data.forEach((record) => tickers.add(record.ticker));
+    nextToken = tickerResult.nextToken;
+  } while (nextToken);
   return [...tickers].sort((left, right) => left.localeCompare(right));
 }
 

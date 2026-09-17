@@ -19,6 +19,7 @@ const schema = a.schema({
       optionsAprMinimumProbability: a.string(),
       optionsAprCallAprBasis: a.string(),
       optionsAprExcludeOutliers: a.boolean(),
+      optionsScreenerSettingsJson: a.string(),
     })
     .authorization((allow) => [allow.owner()]),
   OptionsTrackerRecord: a

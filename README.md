@@ -170,6 +170,12 @@ No additional secrets are required beyond the existing Tasty OAuth setup:
 - `/amplify/tasty/credentials/session-secret`
 - `/amplify/tasty/oauth/tokens` is populated after OAuth login and reused by both Tasty pages
 
+## Options APR Screener
+
+The new `/options-screener` page scans editable ticker lists across every Yahoo option expiration, filters by APR and probability of expiring without exercise, and provides sortable, paginated results. For standalone local use, run `npm run dev:screener` and open `http://127.0.0.1:5173/screener.local.html`.
+
+See [local setup, cloud deployment, and usage directions](docs/options-screener.md).
+
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.

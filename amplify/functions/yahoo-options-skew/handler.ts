@@ -195,11 +195,18 @@ function rollWeekendBackToFriday(value: Date) {
 
 function getMarketDataDate(result: OptionsResult, retrievalDate?: Date) {
   const quote = result.quote as Record<string, unknown>;
-  const quoteTimestamp = [
-    quote.regularMarketTime,
-    quote.postMarketTime,
-    quote.preMarketTime,
-  ].find((value): value is Date => value instanceof Date && !Number.isNaN(value.getTime()));
+  const quoteTimestamp = [quote.regularMarketTime, quote.postMarketTime, quote.preMarketTime]
+    .map((value) => {
+      if (value instanceof Date) {
+        return value;
+      }
+      if (typeof value === "number" || typeof value === "string") {
+        const parsed = new Date(typeof value === "number" && value < 10_000_000_000 ? value * 1000 : value);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+      }
+      return null;
+    })
+    .find((value): value is Date => value !== null && !Number.isNaN(value.getTime()));
   if (quoteTimestamp) {
     const marketDate = dateAtUtcMidnightInTimeZone(quoteTimestamp, "America/New_York");
     if (marketDate) {
@@ -256,6 +263,7 @@ export function buildAprChain(
   requestedOptionType: "both" | "call" | "put",
   requestedStrikeRange: "otm" | "all",
   retrievalDate?: Date,
+  marketDataDateOverride?: Date,
 ) {
   const chain = result.options[0];
   const underlyingPrice = getUnderlyingPrice(result);
@@ -263,7 +271,10 @@ export function buildAprChain(
     throw new Error("Yahoo did not return a usable option chain or underlying price.");
   }
 
-  const marketDataDate = getMarketDataDate(result, retrievalDate);
+  // Use the date captured by the expiration lookup for every chain in one
+  // Explorer run. This keeps annualization (and probability) fixed when the
+  // same Friday quote is requested over a weekend or market holiday.
+  const marketDataDate = marketDataDateOverride ?? getMarketDataDate(result, retrievalDate);
   const daysToExpiration = calendarDaysToExpiration(chain.expirationDate, marketDataDate);
   return {
     companyName: getCompanyName(result),
@@ -484,6 +495,7 @@ export const handler = async (event: ApiGatewayEvent) => {
         symbol: normalizedSymbol,
         companyName: getCompanyName(options),
         underlyingPrice: getUnderlyingPrice(options),
+        marketDataDate: toDateOnly(getMarketDataDate(options)),
         expirationDates: options.expirationDates.map(toDateOnly),
         ...calendarDates,
       });
@@ -516,11 +528,12 @@ export const handler = async (event: ApiGatewayEvent) => {
       }
 
       const retrievalDate = parseExpiration(query.retrievalDate);
+      const marketDataDate = parseExpiration(query.marketDataDate);
 
       const options = await yahooFinance.options(symbol.toUpperCase(), { date: expiration });
       return jsonResponse(200, {
         symbol: symbol.toUpperCase(),
-        data: buildAprChain(options, optionType, strikeRange, retrievalDate),
+        data: buildAprChain(options, optionType, strikeRange, retrievalDate, marketDataDate),
       });
     }
 

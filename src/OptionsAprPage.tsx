@@ -53,6 +53,7 @@ type ExpirationsResponse = {
   symbol: string;
   companyName: string | null;
   underlyingPrice: number | null;
+  marketDataDate: string;
   expirationDates: string[];
   nextEarningsDate: string | null;
   exDividendDate: string | null;
@@ -206,6 +207,7 @@ function OptionsAprPage() {
   const [chartCreatedAt, setChartCreatedAt] = useState<Date | null>(null);
   const [nextEarningsDate, setNextEarningsDate] = useState<string | null>(null);
   const [exDividendDate, setExDividendDate] = useState<string | null>(null);
+  const [marketDataDate, setMarketDataDate] = useState<string | null>(null);
   const [expirationDates, setExpirationDates] = useState<string[]>([]);
   const [selectedExpirations, setSelectedExpirations] = useState<string[]>([]);
   const [requestedOptionType, setRequestedOptionType] = useState<RequestedOptionType>("both");
@@ -725,6 +727,7 @@ function OptionsAprPage() {
     setChartCreatedAt(null);
     setNextEarningsDate(null);
     setExDividendDate(null);
+    setMarketDataDate(null);
     resetChartZoom();
     setExpirationDates([]);
     setSelectedExpirations([]);
@@ -736,6 +739,7 @@ function OptionsAprPage() {
     setLoadedSymbol(result.symbol);
     setCompanyName(result.companyName);
     setUnderlyingPrice(result.underlyingPrice);
+    setMarketDataDate(result.marketDataDate);
     setExpirationDates(result.expirationDates);
     setNextEarningsDate(result.nextEarningsDate);
     setExDividendDate(result.exDividendDate);
@@ -930,6 +934,7 @@ function OptionsAprPage() {
           optionType: requestedOptionType,
           strikeRange: requestedStrikeRange,
           retrievalDate: localRetrievalDate,
+          marketDataDate: expirationMetadata?.marketDataDate ?? marketDataDate ?? localRetrievalDate,
         });
         const result = await fetchJson<ChainResponse>(
           `${apiBaseUrl}/yahoo-options-apr/chain?${params}`,

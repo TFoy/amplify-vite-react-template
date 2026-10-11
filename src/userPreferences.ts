@@ -81,6 +81,8 @@ export async function loadOptionsAprThresholds(pageKey: string) {
   };
 }
 
+// Serialize edits so an earlier, slower request cannot overwrite newer chart settings.
+let optionsAprSaveQueue: Promise<void> = Promise.resolve();
 export async function saveOptionsAprThresholds(
   pageKey: string,
   minimumSimpleApr: string,
@@ -88,23 +90,22 @@ export async function saveOptionsAprThresholds(
   callAprBasis: "currentPrice" | "strikePrice",
   excludeOutliers: boolean,
 ) {
-  const preference = await findPreference(pageKey);
-  if (!preference) {
-    await client.models.UserPreference.create({
-      pageKey,
+  const save = async () => {
+    const preference = await findPreference(pageKey);
+    const values = {
       optionsAprMinimumSimpleApr: minimumSimpleApr,
       optionsAprMinimumProbability: minimumProbability,
       optionsAprCallAprBasis: callAprBasis,
       optionsAprExcludeOutliers: excludeOutliers,
-    });
-    return;
-  }
-
-  await client.models.UserPreference.update({
-    id: preference.id,
-    optionsAprMinimumSimpleApr: minimumSimpleApr,
-    optionsAprMinimumProbability: minimumProbability,
-    optionsAprCallAprBasis: callAprBasis,
-    optionsAprExcludeOutliers: excludeOutliers,
-  });
+    };
+    const result = preference
+      ? await client.models.UserPreference.update({ id: preference.id, ...values })
+      : await client.models.UserPreference.create({ pageKey, ...values });
+    if (result.errors?.length || !result.data) {
+      throw new Error(result.errors?.map((error) => error.message).join("; ") || "Unable to save APR settings.");
+    }
+  };
+  const pending = optionsAprSaveQueue.then(save, save);
+  optionsAprSaveQueue = pending.catch(() => {});
+  return pending;
 }

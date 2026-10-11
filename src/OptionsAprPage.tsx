@@ -136,6 +136,38 @@ function getSimpleApr(option: OptionRow, chain: ChainResult, callAprBasis: CallA
     : null;
 }
 
+function standardNormalCdf(value: number) {
+  const absoluteValue = Math.abs(value);
+  const t = 1 / (1 + 0.2316419 * absoluteValue);
+  const density = Math.exp(-(absoluteValue * absoluteValue) / 2) / Math.sqrt(2 * Math.PI);
+  const polynomial =
+    t *
+    (0.31938153 +
+      t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  const positiveCdf = 1 - density * polynomial;
+  return value >= 0 ? positiveCdf : 1 - positiveCdf;
+}
+
+function getProbabilityExpiresWorthless(option: OptionRow, chain: ChainResult) {
+  const volatility = option.impliedVolatility;
+  const yearsToExpiration = chain.daysToExpiration / 365;
+  if (
+    volatility === null ||
+    volatility <= 0 ||
+    chain.underlyingPrice <= 0 ||
+    option.strike <= 0 ||
+    yearsToExpiration <= 0
+  ) {
+    return null;
+  }
+  const volatilityOverTerm = volatility * Math.sqrt(yearsToExpiration);
+  const d2 =
+    (Math.log(chain.underlyingPrice / option.strike) -
+      0.5 * volatility * volatility * yearsToExpiration) /
+    volatilityOverTerm;
+  return option.optionType === "call" ? standardNormalCdf(-d2) : standardNormalCdf(d2);
+}
+
 function formatHistoryDate(value: string) {
   return new Date(value).toLocaleString(undefined, {
     dateStyle: "medium",
@@ -664,7 +696,7 @@ function OptionsAprPage() {
             optionType,
             strike: option.strike,
             midpoint: option.midpoint,
-            probabilityExpiresWorthless: option.probabilityExpiresWorthless,
+            probabilityExpiresWorthless: getProbabilityExpiresWorthless(option, chain),
           }));
         const data = excludeOutliers
           ? excludeAprOutliers(points, optionType, chain.underlyingPrice)
@@ -821,6 +853,12 @@ function OptionsAprPage() {
       setNextEarningsDate(record.nextEarningsDate);
       setExDividendDate(record.exDividendDate);
       setSelectedExpirations(record.selectedExpirations);
+      if (record.minimumSimpleApr !== null) setMinimumAprInput(record.minimumSimpleApr);
+      if (record.minimumProbability !== null) {
+        setMinimumProbabilityInput(record.minimumProbability);
+      }
+      if (record.callAprBasis !== null) setCallAprBasis(record.callAprBasis);
+      if (record.excludeOutliers !== null) setExcludeOutliers(record.excludeOutliers);
       setChains(snapshot.chains);
       setSelectedHistoryId(record.id);
       resetChartZoom();
@@ -922,10 +960,38 @@ function OptionsAprPage() {
     setChains([]);
     const retrievedAt = new Date();
     const localRetrievalDate = toLocalDateOnly(retrievedAt);
+    const sessionDate = expirationMetadata?.marketDataDate ?? marketDataDate;
     setChartCreatedAt(retrievedAt);
     resetChartZoom();
     const loadedChains: ChainResult[] = [];
     try {
+      if (sessionDate) {
+        const requestedDates = [...expirationsToLoad].sort();
+        const records = await listOptionsAprHistory(tickerToLoad);
+        for (const record of records) {
+          if (
+            record.requestedOptionType !== requestedOptionType ||
+            record.requestedStrikeRange !== requestedStrikeRange ||
+            record.selectedExpirations.length !== requestedDates.length ||
+            [...record.selectedExpirations].sort().some((date, index) => date !== requestedDates[index])
+          ) {
+            continue;
+          }
+          const snapshot = await loadOptionsAprHistory(record);
+          if (
+            snapshot.chains.length === requestedDates.length &&
+            snapshot.chains.every((chain) => chain.marketDataDate === sessionDate)
+          ) {
+            setCompanyName(record.companyName);
+            setUnderlyingPrice(record.underlyingPrice);
+            setChains(snapshot.chains);
+            setSelectedHistoryId(record.id);
+            setChartCreatedAt(new Date(record.retrievedAt));
+            setProgress(`Using saved ${sessionDate} market-session data.`);
+            return;
+          }
+        }
+      }
       for (const [index, expiration] of expirationsToLoad.entries()) {
         setProgress(`Retrieving ${index + 1} of ${expirationsToLoad.length}: ${expiration}`);
         const params = new URLSearchParams({
@@ -934,7 +1000,7 @@ function OptionsAprPage() {
           optionType: requestedOptionType,
           strikeRange: requestedStrikeRange,
           retrievalDate: localRetrievalDate,
-          marketDataDate: expirationMetadata?.marketDataDate ?? marketDataDate ?? localRetrievalDate,
+          marketDataDate: sessionDate ?? localRetrievalDate,
         });
         const result = await fetchJson<ChainResponse>(
           `${apiBaseUrl}/yahoo-options-apr/chain?${params}`,
@@ -964,6 +1030,10 @@ function OptionsAprPage() {
         nextEarningsDate: expirationMetadata?.nextEarningsDate ?? nextEarningsDate,
         exDividendDate: expirationMetadata?.exDividendDate ?? exDividendDate,
         selectedExpirations: [...expirationsToLoad],
+        minimumSimpleApr: minimumAprInput,
+        minimumProbability: minimumProbabilityInput,
+        callAprBasis,
+        excludeOutliers,
         chains: loadedChains,
       });
       setSelectedHistoryId(savedHistory.id);
@@ -1344,7 +1414,7 @@ function OptionsAprPage() {
                     <td>{formatCurrency(option.ask)}</td>
                     <td>{formatCurrency(option.midpoint)}</td>
                     <td>{formatPercent(getSimpleApr(option, chain, callAprBasis))}</td>
-                    <td>{formatPercent(option.probabilityExpiresWorthless)}</td>
+                    <td>{formatPercent(getProbabilityExpiresWorthless(option, chain))}</td>
                   </tr>
                 ))}
               </tbody>

@@ -57,6 +57,10 @@ const schema = a.schema({
       nextEarningsDate: a.string(),
       exDividendDate: a.string(),
       selectedExpirationsJson: a.string().required(),
+      minimumSimpleApr: a.string(),
+      minimumProbability: a.string(),
+      callAprBasis: a.string(),
+      excludeOutliers: a.boolean(),
       favorite: a.boolean().required(),
     })
     .authorization((allow) => [allow.owner()]),

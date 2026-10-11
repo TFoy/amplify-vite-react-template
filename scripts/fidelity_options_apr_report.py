@@ -564,10 +564,49 @@ def daily_capital_chart(lots: list[Lot], stock_lots: list[StockLot], start: date
             + f'<text x="{left}" y="18" class="chart-title">Peak {dollars(peak)} on {peak_day:%b %d, %Y}</text></svg>')
 
 
+def statement_money_movements(path: Path) -> dict[str, object]:
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
+    period = re.search(
+        r"INVESTMENT REPORT\s+[A-Z][a-z]+ \d{1,2}, 20\d{2} - "
+        r"([A-Z][a-z]+) (\d{1,2}), (20\d{2})",
+        text,
+    )
+    if not period:
+        raise ValueError(f"Could not determine statement period in {path.name}")
+    period_end = datetime.strptime(
+        f"{period.group(1)} {period.group(2)}, {period.group(3)}", "%B %d, %Y"
+    ).date()
+
+    def values(label: str) -> tuple[float, float]:
+        match = re.search(
+            rf"(?m)^{re.escape(label)}\s+(-|\$?-?[\d,]+\.\d{{2}})\s+"
+            rf"(-|\$?-?[\d,]+\.\d{{2}})\s*$",
+            text,
+        )
+        if not match:
+            return 0.0, 0.0
+        parse = lambda value: 0.0 if value == "-" else number(value)
+        return parse(match.group(1)), parse(match.group(2))
+
+    contributions = values("Contributions")
+    securities_in = values("Securities Transferred In")
+    distributions = values("Distributions")
+    withdrawals = values("Withdrawals")
+    securities_out = values("Securities Transferred Out")
+    return {
+        "period_end": period_end,
+        "contributions": contributions,
+        "securities_in": securities_in,
+        "cash_out": tuple(distributions[i] + withdrawals[i] for i in range(2)),
+        "securities_out": securities_out,
+    }
+
+
 def write_html(
     path: Path, lots: list[Lot], stock_lots: list[StockLot], prices: dict[str, float],
     price_history: dict[str, dict[date, float]],
     valuation_date: date, warnings: list[str], pdf_count: int,
+    money_movements: list[dict[str, object]],
 ) -> None:
     closed = [x for x in lots if x.closed]
     open_lots = [
@@ -610,11 +649,30 @@ def write_html(
         f"<td>{row['as_of']}</td></tr>" for row in monthly_rows
     )
     notes = "".join(f"<li>{html.escape(x)}</li>" for x in warnings) or "<li>None</li>"
+    latest_movement = max(money_movements, key=lambda item: item["period_end"])
+    ytd_contributions = float(latest_movement["contributions"][1])
+    ytd_securities_in = float(latest_movement["securities_in"][1])
+    ytd_cash_out = abs(float(latest_movement["cash_out"][1]))
+    ytd_securities_out = abs(float(latest_movement["securities_out"][1]))
+    net_external_transfers = ytd_contributions + ytd_securities_in - ytd_cash_out - ytd_securities_out
+    movement_rows = "".join(
+        f"<tr><td>{item['period_end']}</td>"
+        f"<td>{dollars(float(item['contributions'][0]))}</td>"
+        f"<td>{dollars(float(item['securities_in'][0]))}</td>"
+        f"<td>{dollars(abs(float(item['cash_out'][0])))}</td>"
+        f"<td>{dollars(abs(float(item['securities_out'][0])))}</td></tr>"
+        for item in sorted(money_movements, key=lambda value: value["period_end"])
+    )
     page = f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fidelity Options APR Report</title><style>
 body{{margin:0;background:#f3f6fa;color:#172033;font:15px/1.45 Segoe UI,sans-serif}}main{{max-width:1160px;margin:auto;padding:30px 20px 60px}}h1{{margin-bottom:4px}}h2{{margin-top:0}}.muted{{color:#627083}}.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:24px 0}}.card,.panel{{background:#fff;border:1px solid #dfe6ef;border-radius:12px;box-shadow:0 4px 16px #1720330d}}.card{{padding:18px}}.card span{{display:block;color:#627083;font-size:13px}}.card strong{{font-size:27px}}.panel{{padding:20px;margin-top:18px;overflow:auto}}table{{width:100%;border-collapse:collapse;min-width:700px}}th,td{{padding:9px;border-bottom:1px solid #e7ecf2;text-align:right;white-space:nowrap}}th:first-child,td:first-child{{text-align:left}}th{{font-size:12px;color:#627083;text-transform:uppercase}}.note{{border-left:4px solid #2563eb;background:#eff6ff;padding:12px}}svg{{width:100%;min-width:650px}}.axis{{stroke:#aab5c3}}.grid{{stroke:#dfe6ef;stroke-width:1}}.pos{{fill:#059669}}.neg{{fill:#dc2626}}.capital-area{{fill:#2563eb;opacity:.14}}.capital-line{{fill:none;stroke:#2563eb;stroke-width:3;stroke-linejoin:round}}.chart-title{{font-weight:700}}@media print{{body{{background:white}}.panel,.card{{box-shadow:none}}}}
 </style></head><body><main><h1>Fidelity Options APR Report</h1><p class="muted">{first} through {last} · {pdf_count} statements · generated {datetime.now():%Y-%m-%d %H:%M}</p>
 <div class="cards"><div class="card"><span>Combined realized P&amp;L</span><strong>{dollars(portfolio['pnl'])}</strong></div><div class="card"><span>Combined portfolio APR</span><strong>{portfolio['apr']*100:.2f}%</strong></div><div class="card"><span>Matched option lots</span><strong>{portfolio['count']}</strong></div><div class="card"><span>Open option lots</span><strong>{len(open_lots)}</strong></div></div>
 <div class="cards"><div class="card"><span>P&amp;L incl. open assigned shares</span><strong>{dollars(marked['pnl'])}</strong></div><div class="card"><span>APR incl. open assigned shares</span><strong>{marked['apr']*100:.2f}%</strong></div><div class="card"><span>Unrealized assigned-share P&amp;L</span><strong>{dollars(marked['unrealized'])}</strong></div><div class="card"><span>Yahoo valuation date</span><strong>{valuation_date}</strong></div></div>
+<section class="panel"><h2>Money and securities transferred into and out of the account</h2>
+<div class="cards"><div class="card"><span>Cash contributions YTD</span><strong>{dollars(ytd_contributions)}</strong></div><div class="card"><span>Securities transferred in YTD</span><strong>{dollars(ytd_securities_in)}</strong></div><div class="card"><span>Cash withdrawals/distributions YTD</span><strong>{dollars(ytd_cash_out)}</strong></div><div class="card"><span>Securities transferred out YTD</span><strong>{dollars(ytd_securities_out)}</strong></div></div>
+<p><b>Net external additions:</b> {dollars(net_external_transfers)}</p>
+<table><thead><tr><th>Period end</th><th>Cash contributed</th><th>Securities in</th><th>Cash out</th><th>Securities out</th></tr></thead><tbody>{movement_rows}</tbody></table>
+<p class="muted">Securities transferred in are in-kind assets valued by Fidelity, not cash income. Trading activity, dividends, fees, and securities-lending journals are excluded from external transfers.</p></section>
 <section class="panel"><h2>Monthly portfolio measures</h2><table><thead><tr><th>Month</th><th>Combined realized P&amp;L</th><th>Combined portfolio APR</th><th>Matched option lots</th><th>Open option lots</th><th>P&amp;L incl. open assigned shares</th><th>APR incl. open assigned shares</th><th>Unrealized assigned-share P&amp;L</th><th>Valuation date</th></tr></thead><tbody>{monthly_table_rows}</tbody></table><p class="muted">Each row is a cumulative as-of month-end snapshot using the latest Yahoo close on or before that statement month end. The table stops at the latest input statement.</p></section>
 <p class="note"><b>Method:</b> Ticker summaries combine realized option cash flows with FIFO-matched stock gains/losses. During a covered call, the call's premium or closing P&amp;L contributes to return while the underlying stock cost remains the single capital allocation. Stock-holding days without realized option income contribute zero realized return and remain in capital-days through the Yahoo valuation date. Unrealized price changes appear only in the separate mark-to-market calculation. This is not tax or investment advice.</p>
 <section class="panel"><h2>Combined APR by ticker</h2>{bars([(t,s['apr']*100) for t,s in by_ticker], 'Stock-and-option capital-time-weighted realized APR', '%')}</section>
@@ -647,6 +705,7 @@ def main() -> int:
         parser.error(f"No PDFs found in {args.input}")
     events, stock_events, warnings = [], [], []
     statement_ends: list[date] = []
+    money_movements: list[dict[str, object]] = []
     known_security_names: list[tuple[str, str]] = []
     for pdf in pdfs:
         found, found_stocks, review, statement_end = parse_pdf(pdf, known_security_names)
@@ -654,6 +713,7 @@ def main() -> int:
         stock_events += found_stocks
         warnings += review
         statement_ends.append(statement_end)
+        money_movements.append(statement_money_movements(pdf))
     if not events:
         raise SystemExit("No option transactions found in the supplied statements.")
     matched_stock_events: set[int] = set()
@@ -713,7 +773,7 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     write_html(
         args.output, lots, stock_lots, prices, price_history,
-        valuation_date, warnings, len(pdfs),
+        valuation_date, warnings, len(pdfs), money_movements,
     )
     print(f"Parsed {len(events)} option events into {len(lots)} realized/open lots.")
     print(f"HTML: {args.output.resolve()}")

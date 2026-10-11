@@ -19,6 +19,10 @@ export type OptionsAprHistoryRecord = {
   nextEarningsDate: string | null;
   exDividendDate: string | null;
   selectedExpirations: string[];
+  minimumSimpleApr: string | null;
+  minimumProbability: string | null;
+  callAprBasis: "currentPrice" | "strikePrice" | null;
+  excludeOutliers: boolean | null;
   favorite: boolean;
 };
 
@@ -41,6 +45,13 @@ function mapHistory(record: Schema["OptionsAprHistory"]["type"]): OptionsAprHist
     nextEarningsDate: record.nextEarningsDate ?? null,
     exDividendDate: record.exDividendDate ?? null,
     selectedExpirations: JSON.parse(record.selectedExpirationsJson) as string[],
+    minimumSimpleApr: record.minimumSimpleApr ?? null,
+    minimumProbability: record.minimumProbability ?? null,
+    callAprBasis:
+      record.callAprBasis === "currentPrice" || record.callAprBasis === "strikePrice"
+        ? record.callAprBasis
+        : null,
+    excludeOutliers: record.excludeOutliers ?? null,
     favorite: record.favorite,
   };
 }
@@ -118,6 +129,10 @@ export async function saveOptionsAprHistory(input: {
   nextEarningsDate: string | null;
   exDividendDate: string | null;
   selectedExpirations: string[];
+  minimumSimpleApr: string;
+  minimumProbability: string;
+  callAprBasis: "currentPrice" | "strikePrice";
+  excludeOutliers: boolean;
   chains: ChainResult[];
 }) {
   const historyResult = await client.models.OptionsAprHistory.create({
@@ -130,6 +145,10 @@ export async function saveOptionsAprHistory(input: {
     nextEarningsDate: input.nextEarningsDate,
     exDividendDate: input.exDividendDate,
     selectedExpirationsJson: JSON.stringify(input.selectedExpirations),
+    minimumSimpleApr: input.minimumSimpleApr,
+    minimumProbability: input.minimumProbability,
+    callAprBasis: input.callAprBasis,
+    excludeOutliers: input.excludeOutliers,
     favorite: false,
   });
   if (!historyResult.data || historyResult.errors) {
